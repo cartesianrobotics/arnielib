@@ -1,3 +1,12 @@
+"""
+TODO:
+1. Make commands interruptable.
+2. Make a function for specifying tools. 
+3. Save tools in a file. 
+4. Make a function for swapping tools. 
+
+"""
+
 import serial
 import time
 import math
@@ -175,7 +184,7 @@ class arnie(serial_device):
         
         self.speed_x = speed_x
         self.speed_y = speed_y
-        self.speed_z = speed_z
+        self.speed_z = speed_z		
         
     def home(self, axis='XYZ'):
         """
@@ -612,4 +621,5 @@ def connect():
 	
 	robot = arnie(ports[0])
 	robots.append(robot)
+	robot.home()
 	return robot
