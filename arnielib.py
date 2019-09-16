@@ -138,7 +138,7 @@ class serial_device():
     
     def readAll(self, timeout=0.1):
         """
-        Function will wait until everything that the devise send is read
+        Function will wait until everything that the device send is read
         """
         # Give time for device to respond
         time.sleep(timeout)
@@ -621,5 +621,8 @@ def connect():
 	
 	robot = arnie(ports[0])
 	robots.append(robot)
+	print("Connected. Homing.")
+	time.sleep(1)
 	robot.home()
+	print("Done.")
 	return robot
