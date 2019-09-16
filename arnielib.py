@@ -73,6 +73,7 @@ class serial_device():
 		
 		self.eol=eol
 		self.idle = True
+		self.recent_message = ""
 
 		self.openSerialPort(port_name, baudrate, timeout)
 	
@@ -212,20 +213,49 @@ class arnie(serial_device):
 		return speed
 	
 	
-	def moveAxis(self, axis, coordinate, speed=None):
+	def moveAxis(self, axis, destination, speed=None):
+		if destination == 0:
+			return 
 		
 		axis=axis.upper()
-		coordinate = str(coordinate)
-		coord_cmd = axis + coordinate
 		speed = self._decideSpeed(axis, speed)
 		speed_cmd = 'F' + str(speed)
-		full_cmd = 'G0 ' + coord_cmd + ' ' + speed_cmd
+		full_cmd = 'G0 ' + axis + str(destination) + ' ' + speed_cmd
 		
 		try:
 			self.writeAndWait(full_cmd)
 		except:
 			pass
+		return 
 		
+		# This was a failed attempt to make commands interruptable.
+		if axis == "X":
+			coordinate_i = 0
+		elif axis == "Y":
+			coordinate_i = 1
+		elif axis == "Z":
+			coordinate_i = 2
+		else:
+			print("ERROR: Unknown axis.")
+			return
+		
+		pos = self.getPosition()
+		if pos[coordinate_i] == destination:
+			return
+		elif destination > pos[coordinate_i]:
+			direction = 1
+		else:
+			direction = -1
+			
+		distance = abs(pos[coordinate_i] - destination)
+		next_step = pos[coordinate_i]
+		
+		while distance > 0:
+			next_step += direction
+			distance -= 1
+			cmd = 'G0 ' + axis + str(next_step) + ' ' + speed_cmd			
+			self.writeAndWait(cmd)
+
 		
 	def moveXY(self, x, y, speed=None):
 		speed = self._decideSpeed('X', speed)
@@ -236,11 +266,7 @@ class arnie(serial_device):
 			pass
 	
 	
-	def moveZ(self, z, speed=None):
-		self.moveAxis('Z', z, speed)
-	
-	
-	def move(self, x=None, y=None, z=None, z_first=True, speed_xy=None, speed_z=None):
+	def move(self, x=0, y=0, z=0, z_first=True, speed_xy=None, speed_z=None):
 		"""
 		Move robot to an absolute coordinates.
 		
@@ -253,23 +279,13 @@ class arnie(serial_device):
 		# If something goes wrong, like coordinate not specified, command is ignored
 		# and the next one is attempted.
 		if z_first:
-			if z is not None:
-				self.moveZ(z, speed_z)
-			if x is not None and y is not None:
-				self.moveXY(x, y, speed_xy)
-			elif x is not None and y is None:
-				self.moveAxis('X', x, speed_xy)
-			elif y is not None and x is None:
-				self.moveAxis('Y', y, speed_xy)
+			self.moveAxis('Z', z, speed_z)
+			self.moveAxis('X', x, speed_xy)
+			self.moveAxis('Y', y, speed_xy)
 		else:
-			if x is not None and y is not None:
-				self.moveXY(x, y, speed_xy)
-			elif x is not None and y is None:
-				self.moveAxis('X', x, speed_xy)
-			elif y is not None and x is None:
-				self.moveAxis('Y', y, speed_xy)
-			if z is not None:
-				self.moveZ(z, speed_z)
+			self.moveAxis('X', x, speed_xy)
+			self.moveAxis('Y', y, speed_xy)
+			self.moveAxis('Z', z, speed_z)
 	
 	def moveDelta(self, dx=None, dy=None, dz=None, z_first=True, speed_xy=None, speed_z=None):
 		"""
@@ -306,7 +322,8 @@ class arnie(serial_device):
 	
 	def getPosition(self):
 		# TODO: Fix this.
-		msg = self.writeAndWait("M114")
+		self.writeAndWait("M114")
+		msg = self.recent_message
 		msg_list = re.split(pattern=' ', string=msg)
 		x_str = msg_list[0]
 		y_str = msg_list[1]
@@ -608,6 +625,7 @@ def wait_for_messages(device):
 		message = device.readAll()
 		if message != "":
 			print("MESSAGE: " + repr(message))
+			device.recent_message = message
 			if re.search(pattern="ok\n", string=message):
 				device.idle = True
 
