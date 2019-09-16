@@ -6,6 +6,7 @@ import re
 import sys
 import glob
 
+robots = []
 
 def serial_ports():
     """ Lists serial port names
@@ -41,16 +42,15 @@ class serial_device():
     be it an Arnie robot, or a tool or something else
     """
     
-    def __init__(self, com_port_number, baudrate=115200, timeout=0.1, eol="\r"):
+    def __init__(self, port_name, baudrate=115200, timeout=0.1, eol="\r"):
         
         """
         Initializes a devise to communicate through the serial port
         (which is now most likely a USB emulation of a serial port)
         
         Inputs:
-            com_port_number 
-                port number which robot is going to use to communicate. For now, find it manually.
-                TODO: automatic port number discovery.
+            port_name 
+                The name of the port through which a robot or a tool is going to communicate.
             baudrate
                 Speed of communication. For USB 115200 is good. Lower if communication becomes bad.
             timeout
@@ -63,19 +63,19 @@ class serial_device():
         
         self.eol=eol
 
-        self.openSerialPort(com_port_number, baudrate, timeout)
+        self.openSerialPort(port_name, baudrate, timeout)
     
     
-    def openSerialPort(self, com_port_number=None, baudrate=115200, timeout=0.1):
+    def openSerialPort(self, port_name="", baudrate=115200, timeout=0.1):
         """
         Opens serial port
         """
-        # Trying to use specifically provided com_port_number
+        # Trying to use specifically provided port_name
         # Otherwise using whatever internal number instance may already have.
-        if com_port_number is not None:
-            com_port = "COM"+str(com_port_number)
+        if port_name != "":
+            com_port = port_name
         else:
-            com_port = "COM"+str(self.com_port_number)
+            com_port = self.port_name
         # Make sure port is closed
         self.close()
         # Opening robot instance
@@ -88,11 +88,13 @@ class serial_device():
         """
         Will try to close Arnie port if it is open
         """
+        if self in robots:
+            robots.remove(self)
+        
         try:
             self.port.close()
         except:
             pass
-        
         
     def write(self, expression, eol=None):
         """
@@ -168,8 +170,8 @@ class serial_device():
 		
 class arnie(serial_device):
     
-    def __init__(self, com_port_number, baudrate=115200, timeout=0.1, speed_x=20000, speed_y=20000, speed_z=15000):
-        super().__init__(com_port_number, baudrate, timeout, eol="\r")
+    def __init__(self, port_name, baudrate=115200, timeout=0.1, speed_x=20000, speed_y=20000, speed_z=15000):
+        super().__init__(port_name, baudrate, timeout, eol="\r")
         
         self.speed_x = speed_x
         self.speed_y = speed_y
@@ -455,7 +457,7 @@ class tool_slot(slot):
 		
 class tool(serial_device):
     
-    def __init__ (self, position_tuple, com_port_number, eol="\r\n"):
+    def __init__ (self, position_tuple, port_name, eol="\r\n"):
         
         """
         To initialize, provide position_tuple in the form (x, y, z). 
@@ -474,7 +476,7 @@ class tool(serial_device):
         self.z = position_tuple[2]
         # End of line
         self.eol = eol
-        self.com_port_number = com_port_number
+        self.port_name = port_name
     
     
     def getToolCoordinates(self):
@@ -484,8 +486,8 @@ class tool(serial_device):
         return self.x, self.y, self.z  
 		
 class touch_probe(tool):
-    def __init__(self, position_tuple, com_port_number):
-        super().__init__(position_tuple, com_port_number, eol="")
+    def __init__(self, position_tuple, port_name):
+        super().__init__(position_tuple, port_name, eol="")
     
     def isTouched(self):
         self.write('d')
@@ -595,4 +597,19 @@ def findXY(arnie, touch_probe, x1, y1, z, z_lift, x2, y2):
 def findZ(arnie, touch_probe, x, y, z):
     return findCenter(arnie, touch_probe, 'z', x, y, z)[0]
 
+def connect():
+	ports = serial_ports()
 	
+	if len(ports) == 0:
+		print("ERROR: Couldn't find any ports.")
+		return
+		
+	if len(ports) > 1:
+		print("ERROR: More than one port detected. Please remove all tools manually.")
+		return
+	
+	# TODO: What if we see a port, but it's not a robot?
+	
+	robot = arnie(ports[0])
+	robots.append(robot)
+	return robot
