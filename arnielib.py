@@ -104,6 +104,12 @@ class serial_device():
 		self.port = serial.Serial(com_port, baudrate, timeout=timeout)
 		# Cleaning input buffer from hello message
 		self.port.flushInput()
+		
+		while True:
+			msg = self.readAll()
+			if msg != "":
+				print("Msg: " + msg)
+				break
 
 		
 	def close(self):
@@ -439,6 +445,21 @@ class arnie(serial_device):
 			attempt_successful = 0
 		return attempt_successful
 		
+	def calibrate(self):
+		self.home()
+		self.min = self.getPosition()
+		ports = serial_ports()
+		if len(ports) == 0:
+			print("ERROR: No tool connected.")
+			return
+		
+		self.current_tool = touch_probe([0, 0, 0], ports[0])
+		self.current_tool.openSerialPort()
+		
+		print(self.current_tool.isTouched())
+		
+		self.calibrated = True
+		
 class slot():
 	"""
 	Handles a slot on a robot base
@@ -511,6 +532,7 @@ class touch_probe(tool):
 	def isTouched(self):
 		self.write('d')
 		response = self.readAll()
+		print("Touch probe response: " + response)
 		return bool(int(re.split(pattern='/r/n', string=response)[0]))
 		
 GenCenter = lambda xmin, xmax: xmin + (xmax - xmin)/2.0
@@ -634,13 +656,17 @@ def connect():
 		print("ERROR: Couldn't find any ports.")
 		return
 		
-	if len(ports) > 1:
-		print("ERROR: More than one port detected. Please remove all tools manually.")
-		return
+#	if len(ports) > 1:
+#		print("ERROR: More than one port detected. Please remove all tools manually.")
+#		return
 	
 	# TODO: What if we see a port, but it's not a robot?
 	
-	robot = arnie(ports[0])
+	if "COM3" not in ports:
+		print("ERROR: unexpected ports. " + ports)
+		return
+	
+	robot = arnie("COM3")
 	_thread.start_new_thread(wait_for_messages, (robot,))
 	
 	robots.append(robot)
