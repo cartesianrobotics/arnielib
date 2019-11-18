@@ -18,6 +18,16 @@ import glob
 
 robots = []
 
+def axis_index(axis):
+	result = axis.upper()
+	axes = ["X", "Y", "Z"]
+	if result not in axes:
+		print("ERROR: wrond axis provided: " + axis)
+		return -1
+	else:
+		result = axes.index(result)
+		return result
+
 def serial_ports():
 	""" Lists serial port names
 
@@ -174,13 +184,10 @@ class serial_device():
 			pass
 		
 class arnie(serial_device):
-	
 	def __init__(self, port_name, baudrate=115200, timeout=0.1, speed_x=20000, speed_y=20000, speed_z=15000):
 		super().__init__(port_name, baudrate, timeout, eol="\r")
-		
-		self.speed_x = speed_x
-		self.speed_y = speed_y
-		self.speed_z = speed_z
+		self.calibrated = False
+		self.speed = [speed_x, speed_y, speed_z]
 		
 	def home(self, axes='XYZ'):
 		"""
@@ -199,23 +206,13 @@ class arnie(serial_device):
 				self.writeAndWait('G28 '+axis)
 	
 	
-	def _decideSpeed(self, axis, speed):
-		if speed is None:
-			if axis=='X':
-				speed = self.speed_x
-			elif axis=='Y':
-				speed = self.speed_y
-			else:
-				speed = self.speed_z
-		return speed
-	
-	
 	def moveAxis(self, axis, destination, speed=None):
 		if destination == 0:
 			return 
 		
 		axis=axis.upper()
-		speed = self._decideSpeed(axis, speed)
+		if speed == None:
+			speed = self.speed[axis_index(axis)]
 		speed_cmd = 'F' + str(speed)
 		full_cmd = 'G0 ' + axis + str(destination) + ' ' + speed_cmd
 		
@@ -255,7 +252,8 @@ class arnie(serial_device):
 
 		
 	def moveXY(self, x, y, speed=None):
-		speed = self._decideSpeed('X', speed)
+		if speed == None:
+			speed = self.speed[axis_index("X")]
 		full_cmd = 'G0 X' + str(x) + ' Y' + str(y) + ' F' + str(speed)
 		try:
 			self.writeAndWait(full_cmd)
@@ -269,8 +267,10 @@ class arnie(serial_device):
 		
 		Spefify z_first = True if you want Z to move first; otherwise x an y will move first.
 		"""
-		speed_xy = self._decideSpeed('X', speed_xy)
-		speed_z = self._decideSpeed('Z', speed_z)
+		if speed_xy == None:
+			speed_xy = self.speed[axis_index("X")]
+		if speed_z == None:
+			speed_z = self.speed[axis_index("Z")]
 		
 		# Each of the functions attempting to move an axis to the coordinate. 
 		# If something goes wrong, like coordinate not specified, command is ignored
