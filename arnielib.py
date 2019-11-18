@@ -182,24 +182,21 @@ class arnie(serial_device):
 		self.speed_y = speed_y
 		self.speed_z = speed_z
 		
-	def home(self, axis='XYZ'):
+	def home(self, axes='XYZ'):
 		"""
-		Home one of the axis, X, Y or Z.
+		Home one of the axes, X, Y or Z.
 		Axis 
 			axis to home
 				x - home X axis
 				y - home Y axis
 				z - home Z axis
 		"""
-		axis = axis.upper()
-		if axis != 'X' and axis != 'Y' and axis != 'Z' and axis != 'XYZ':
-			print ('Wrong axis specified. Please specify x, y or z. You specified: '+axis)
-		elif axis == 'XYZ':
-			self.writeAndWait('G28 Z')
-			self.writeAndWait('G28 Y')
-			self.writeAndWait('G28 X')
-		else:
-			self.writeAndWait('G28 '+axis)
+		for axis in axes:
+			axis = axis.upper()
+			if axis != 'X' and axis != 'Y' and axis != 'Z' and axis != 'XYZ':
+				print ('Wrong axis specified. Please specify x, y or z. You specified: '+axis)
+			else:
+				self.writeAndWait('G28 '+axis)
 	
 	
 	def _decideSpeed(self, axis, speed):
