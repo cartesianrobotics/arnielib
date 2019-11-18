@@ -456,7 +456,9 @@ class arnie(serial_device):
 		self.current_tool = touch_probe([0, 0, 0], ports[0])
 		self.current_tool.openSerialPort()
 		
-		print(self.current_tool.isTouched())
+		self.move(z=5000)
+		ApproachUntilTouch(self, self.current_tool, "Z", 5.0)
+		print(self.getPosition()[2])
 		
 		self.calibrated = True
 		
