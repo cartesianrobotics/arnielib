@@ -195,7 +195,7 @@ class arnie(serial_device):
 		self.calibrated = False
 		self.speed = [speed_x, speed_y, speed_z]
 		
-	def home(self, axes='XYZ'):
+	def home(self, axes='ZXY'):
 		"""
 		Home one of the axes, X, Y or Z.
 		Axis 
@@ -448,6 +448,7 @@ class arnie(serial_device):
 	def calibrate(self):
 		self.home()
 		self.min = self.getPosition()
+		self.max = [0, 0, 0]
 		ports = serial_ports()
 		if len(ports) == 0:
 			print("ERROR: No tool connected.")
@@ -456,10 +457,19 @@ class arnie(serial_device):
 		self.current_tool = touch_probe([0, 0, 0], ports[0])
 		self.current_tool.openSerialPort()
 		
-		self.move(z=5000)
+		self.move(z=5700)
 		ApproachUntilTouch(self, self.current_tool, "Z", 5.0)
-		print(self.getPosition()[2])
 		
+		self.max[2] = self.getPosition()[2]
+		
+		self.move(z=5800)
+		self.move(x = 100, y = 100)
+		self.move(z=self.max[2])
+		pos = self.getPosition()
+		findCenter(self, self.current_tool, "X", pos[0], pos[1], pos[2])
+		
+		print(self.min)
+		print(self.max)
 		self.calibrated = True
 		
 class slot():
