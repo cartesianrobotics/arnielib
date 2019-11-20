@@ -82,7 +82,6 @@ class serial_device():
 		"""
 		
 		self.eol=eol
-		self.idle = True
 		self.recent_message = ""
 
 		self.openSerialPort(port_name, baudrate, timeout)
@@ -179,15 +178,18 @@ class serial_device():
 		Function will return an output message
 		"""
 		
-		if not self.idle:
-			print("ERROR: Device is not idle. Command dropped.")
-			return
-		
 		self.idle = False
 		self.write(expression, eol)
 		
-		while not self.idle:
-			pass
+		full_message = ""
+		while True:
+			message = self.readAll()
+			if message != "":
+				print("MESSAGE: " + repr(message))
+				full_message += message
+				if re.search(pattern="ok\n", string=full_message):
+					self.recent_message = full_message
+					break
 		
 class arnie(serial_device):
 	def __init__(self, port_name, baudrate=115200, timeout=0.1, speed_x=20000, speed_y=20000, speed_z=15000):
@@ -650,17 +652,6 @@ def findXY(arnie, touch_probe, x1, y1, z, z_lift, x2, y2):
 def findZ(arnie, touch_probe, x, y, z):
 	return findCenter(arnie, touch_probe, 'z', x, y, z)[0]
 
-
-def wait_for_messages(device):
-	while True:
-		message = device.readAll()
-		if message != "":
-			print("MESSAGE: " + repr(message))
-			device.recent_message = message
-			if re.search(pattern="ok\n", string=message):
-				device.idle = True
-
-
 def connect():
 	ports = serial_ports()
 	
@@ -679,7 +670,6 @@ def connect():
 		return
 	
 	robot = arnie("COM3")
-	_thread.start_new_thread(wait_for_messages, (robot,))
 	
 	robots.append(robot)
 	print("Connected. Homing.")
