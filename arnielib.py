@@ -4,6 +4,8 @@ TODO:
 2. Make a function for specifying tools. 
 3. Save tools in a file. 
 4. Make a function for swapping tools. 
+5. Measure the heights.
+6. Save the measurements in a file. 
 
 """
 	
@@ -192,7 +194,7 @@ class serial_device():
 					break
 		
 class arnie(serial_device):
-	def __init__(self, port_name, baudrate=115200, timeout=0.1, speed_x=20000, speed_y=20000, speed_z=15000):
+	def __init__(self, port_name, baudrate=115200, timeout=0.1, speed_x=15000, speed_y=15000, speed_z=15000):
 		super().__init__(port_name, baudrate, timeout, eol="\r")
 		self.calibrated = False
 		self.speed = [speed_x, speed_y, speed_z]
@@ -446,34 +448,109 @@ class arnie(serial_device):
 			print("Repeated tool pickup failed after "+str(current_attempt)+" attempts")
 			attempt_successful = 0
 		return attempt_successful
+	
+def calibrate(robot):
+	robot.n_slots_width = 6
+	robot.n_slots_height = 4
+
+	robot.home()
+	robot.min = robot.getPosition()
+	robot.max = [0, 0, 0]
+	ports = serial_ports()
+	if len(ports) == 0:
+		print("ERROR: No tool connected.")
+		return
+	
+	robot.current_tool = touch_probe([0, 0, 0], ports[0])
+	robot.current_tool.openSerialPort()
+	# TODO: Make sure it's a probe.
+	
+	robot.move(z=5900)
+	ApproachUntilTouch(robot, robot.current_tool, "Z", 5.0)
+	
+	robot.max[2] = robot.getPosition()[2]
+	
+	robot.move(z=5800)
+	robot.move(x = 100, y = 100)
+	robot.move(z=robot.max[2] - 30)
+	pos = robot.getPosition()
+	
+	ApproachUntilTouch(robot, robot.current_tool, "X", 5.0)
+	slot_wall_x_up = robot.getPosition()[0]
+	ApproachUntilTouch(robot, robot.current_tool, "X", -5.0)
+	slot_wall_x_down = robot.getPosition()[0]
+	
+	ApproachUntilTouch(robot, robot.current_tool, "Y", 5.0)
+	slot_wall_y_up = robot.getPosition()[1]
+	ApproachUntilTouch(robot, robot.current_tool, "Y", -5.0)
+	slot_wall_y_down = robot.getPosition()[1]
+	
+	print("First slot coordinates", slot_wall_x_up, slot_wall_x_down, slot_wall_y_up, slot_wall_y_down)
+	
+	robot.first_slot = [slot_wall_x_up, slot_wall_x_down, slot_wall_y_up, slot_wall_y_down, robot.max[2]]
+	
+	slot_width = slot_wall_x_up - slot_wall_x_down
+	slot_height = slot_wall_y_up - slot_wall_y_down
+	
+	# TODO: This is a terrible formula. Need to improve
+	check_slot_n_y = robot.n_slots_height - (1 - robot.n_slots_height % 2)
+	last_slot_center = [slot_wall_x_down + (robot.n_slots_width - 0.5) * slot_width + 50, slot_wall_y_down + (check_slot_n_y - 0.5) * slot_height + 100]
+	
+	robot.move(z=5800)
+	robot.move(x = last_slot_center[0], y = last_slot_center[1])
+
+	ApproachUntilTouch(robot, robot.current_tool, "Z", 5.0)	
+	robot.moveDelta(dz=-30)
+	
+	ApproachUntilTouch(robot, robot.current_tool, "X", 5.0)
+	slot_wall_x_up = robot.getPosition()[0]
+	
+	ApproachUntilTouch(robot, robot.current_tool, "Y", 5.0)
+	slot_wall_y_up = robot.getPosition()[1]
+	robot.moveDelta(dx=-5)
+	ApproachUntilTouch(robot, robot.current_tool, "Y", -5.0)
+	slot_wall_y_down = robot.getPosition()[1]
+
+	ApproachUntilTouch(robot, robot.current_tool, "X", -5.0)
+	slot_wall_x_down = robot.getPosition()[0]
+
+	robot.moveDelta(dz=-70)
+	
+	print("Last slot coordinates", slot_wall_x_up, slot_wall_x_down, slot_wall_y_up, slot_wall_y_down)
+
+	robot.last_slot = [slot_wall_x_up, slot_wall_x_down, slot_wall_y_up, slot_wall_y_down, robot.getPosition()[2]]
+	print("Slots:")
+	print(robot.first_slot)
+	print(robot.last_slot)
+	
+	print(robot.min)
+	print(robot.max)
+	robot.calibrated = True
+
+def go_to_slot_center(robot, n_x, n_y):
+	if not robot.calibrated:
+		print("ERROR: The robot is not calibrated.")
+		return
 		
-	def calibrate(self):
-		self.home()
-		self.min = self.getPosition()
-		self.max = [0, 0, 0]
-		ports = serial_ports()
-		if len(ports) == 0:
-			print("ERROR: No tool connected.")
-			return
+	if n_x < 0 or n_x >= robot.n_slots_width:
+		print("ERROR: Invalid x coordinate: " + str(n_x))
+		return
 		
-		self.current_tool = touch_probe([0, 0, 0], ports[0])
-		self.current_tool.openSerialPort()
+	if n_y < 0 or n_y >= robot.n_slots_height:
+		print("ERROR: Invalid y coordinate: " + str(n_y))
+		return
 		
-		self.move(z=5700)
-		ApproachUntilTouch(self, self.current_tool, "Z", 5.0)
-		
-		self.max[2] = self.getPosition()[2]
-		
-		self.move(z=5800)
-		self.move(x = 100, y = 100)
-		self.move(z=self.max[2])
-		pos = self.getPosition()
-		findCenter(self, self.current_tool, "X", pos[0], pos[1], pos[2])
-		
-		print(self.min)
-		print(self.max)
-		self.calibrated = True
-		
+	first_slot_center = [(robot.first_slot[0] + robot.first_slot[1])/2, (robot.first_slot[2] + robot.first_slot[3])/2]
+	last_slot_center = [(robot.last_slot[0] + robot.last_slot[1])/2, (robot.last_slot[2] + robot.last_slot[3])/2]
+	
+	slot_width = (last_slot_center[0] - first_slot_center[0]) / robot.n_slots_width
+	check_slot_n_y = robot.n_slots_height - (1 - robot.n_slots_height % 2)
+	slot_height = (last_slot_center[1] - first_slot_center[1]) / check_slot_n_y
+	
+	destination_x = first_slot_center[0] + n_x * slot_width
+	destination_y = first_slot_center[1] + n_y * slot_height
+	robot.move(x=destination_x, y=destination_y)
+
 class slot():
 	"""
 	Handles a slot on a robot base
@@ -596,17 +673,19 @@ def ApproachUntilTouch(arnie, touch_probe, axis, step):
 	x, y, z = arnie.getPosition()
 	
 	if delta_coord != [0, 0, 0] and delta_coord != [None, None, None]:
-		while True:
-			if touch_probe.isTouched():
-				x, y, z = arnie.getPosition()
-				# Move backwards by a tiny step to disengage after sensor got engaged
-				arnie.moveDelta(dx=-delta_coord[0], dy=-delta_coord[1], dz=-delta_coord[2], speed_xy=1000)
-				break
-			# ApproachUntilTouchoach forward by a tiny step
+		while not touch_probe.isTouched():
+			# ApproachUntilTouchoach forward by a tiny step	
 			arnie.moveDelta(dx=delta_coord[0], dy=delta_coord[1], dz=delta_coord[2], speed_xy=1000)
 	else:
 		print ("Interrupted because wrong axis was provided.")
+		return
 		
+	x, y, z = arnie.getPosition()
+	
+	while touch_probe.isTouched():
+		# Move backwards by a tiny step to disengage after sensor got engaged
+		arnie.moveDelta(dx=-delta_coord[0], dy=-delta_coord[1], dz=-delta_coord[2], speed_xy=1000)
+	
 	return x, y, z
 	
 def findCenter(arnie, touch_probe, axis, x, y, z, axis_lift=None, lift_val=None, second_end=None, step=5.0, fine_coef=5.0):
