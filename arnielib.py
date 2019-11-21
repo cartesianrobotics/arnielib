@@ -448,6 +448,21 @@ class arnie(serial_device):
 			print("Repeated tool pickup failed after "+str(current_attempt)+" attempts")
 			attempt_successful = 0
 		return attempt_successful
+
+def find_wall(robot, axis, direction):
+	# direction should be either 1 or -1
+	if direction != 1 and direction != -1:
+		print("ERROR: invalid direction.")
+		print(direction)
+		return
+		
+	ApproachUntilTouch(robot, robot.current_tool, axis, direction * 5.0) # CONSTANT
+	ApproachUntilTouch(robot, robot.current_tool, axis, direction * 0.5) # CONSTANT
+	result = robot.getPosition()[axis_index(axis)]
+	step_back = [0, 0, 0]
+	step_back[axis_index(axis)] = -direction * 5 # CONSTANT
+	robot.moveDelta(dx=step_back[0], dy=step_back[1], dz=step_back[2])
+	return result
 	
 def calibrate(robot):
 	robot.n_slots_width = 6
@@ -466,30 +481,21 @@ def calibrate(robot):
 	# TODO: Make sure it's a probe.
 	
 	robot.move(z=5900)
-	ApproachUntilTouch(robot, robot.current_tool, "Z", 5.0)
-	
-	robot.max[2] = robot.getPosition()[2]
-	
+	robot.max[2] = find_wall(robot, "Z", 1)
+		
 	robot.move(z=5800)
 	robot.move(x = 100, y = 100)
 	robot.move(z=robot.max[2] - 30)
 	pos = robot.getPosition()
 	
-	ApproachUntilTouch(robot, robot.current_tool, "X", -5.0)
-	slot_wall_x_down = robot.getPosition()[0]
-	
-	ApproachUntilTouch(robot, robot.current_tool, "X", 5.0)
-	slot_wall_x_up = robot.getPosition()[0]
-	
-	ApproachUntilTouch(robot, robot.current_tool, "Y", -5.0)
-	slot_wall_y_down = robot.getPosition()[1]
-	
-	ApproachUntilTouch(robot, robot.current_tool, "Y", 5.0)
-	slot_wall_y_up = robot.getPosition()[1]
+	slot_wall_x_down = find_wall(robot, "X", -1)	
+	slot_wall_x_up = find_wall(robot, "X", 1)
+	slot_wall_y_down = find_wall(robot, "Y", -1)
+	slot_wall_y_up = find_wall(robot, "Y", 1)
 	
 	print("First slot coordinates", slot_wall_x_up, slot_wall_x_down, slot_wall_y_up, slot_wall_y_down)
 	
-	robot.first_slot = [slot_wall_x_up, slot_wall_x_down, slot_wall_y_up, slot_wall_y_down, robot.max[2]]
+	robot.first_slot = [slot_wall_x_down, slot_wall_x_up, slot_wall_y_down, slot_wall_y_up, robot.max[2]]
 	
 	slot_width = slot_wall_x_up - slot_wall_x_down
 	slot_height = slot_wall_y_up - slot_wall_y_down
@@ -501,28 +507,19 @@ def calibrate(robot):
 	robot.move(z=5800)
 	robot.move(x = last_slot_center[0], y = last_slot_center[1])
 
-	ApproachUntilTouch(robot, robot.current_tool, "Z", 5.0)	
-	robot.moveDelta(dz=-30)
+	find_wall(robot, "Z", 1)	
 
-	ApproachUntilTouch(robot, robot.current_tool, "X", -5.0)
-	slot_wall_x_down = robot.getPosition()[0]
-	
-	ApproachUntilTouch(robot, robot.current_tool, "X", 5.0)
-	slot_wall_x_up = robot.getPosition()[0]
-	
-	robot.moveDelta(dx=-5)
-	
-	ApproachUntilTouch(robot, robot.current_tool, "Y", -5.0)
-	slot_wall_y_down = robot.getPosition()[1]
-	
-	ApproachUntilTouch(robot, robot.current_tool, "Y", 5.0)
-	slot_wall_y_up = robot.getPosition()[1]
+	slot_wall_x_down = find_wall(robot, "X", -1)
+	slot_wall_x_up = find_wall(robot, "X", 1)
+	slot_wall_y_down = find_wall(robot, "Y", -1)	
+	slot_wall_y_up = find_wall(robot, "Y", 1)
 	
 	robot.moveDelta(dz=-70)
 	
 	print("Last slot coordinates", slot_wall_x_up, slot_wall_x_down, slot_wall_y_up, slot_wall_y_down)
 
-	robot.last_slot = [slot_wall_x_up, slot_wall_x_down, slot_wall_y_up, slot_wall_y_down, robot.getPosition()[2]]
+	robot.last_slot = [slot_wall_x_down, slot_wall_x_up, slot_wall_y_down, slot_wall_y_up, robot.getPosition()[2]]
+	
 	print("Slots:")
 	print(robot.first_slot)
 	print(robot.last_slot)
@@ -749,7 +746,8 @@ def connect():
 	# TODO: What if we see a port, but it's not a robot?
 	
 	if "COM3" not in ports:
-		print("ERROR: unexpected ports. " + ports)
+		print("ERROR: unexpected ports. ")
+		print(ports)
 		return
 	
 	robot = arnie("COM3")
