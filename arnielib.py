@@ -460,11 +460,20 @@ def find_wall(robot, axis, direction):
 	ApproachUntilTouch(robot, robot.current_tool, axis, direction * 0.5) # CONSTANT
 	result = robot.getPosition()[axis_index(axis)]
 	step_back = [0, 0, 0]
-	step_back[axis_index(axis)] = -direction * 5 # CONSTANT
+	if axis == "Z": 
+		step_back_length = 30 # CONSTANT
+	else:
+		step_back_length = 5 # CONSTANT
+	step_back[axis_index(axis)] = -direction * step_back_length
 	robot.moveDelta(dx=step_back[0], dy=step_back[1], dz=step_back[2])
 	return result
 	
 def calibrate(robot):
+	calibration_start_time = time.time()
+	
+	expected_slot_width = 248
+	expected_slot_height = 140
+	
 	robot.n_slots_width = 6
 	robot.n_slots_height = 4
 
@@ -482,9 +491,13 @@ def calibrate(robot):
 	
 	robot.move(z=5900)
 	robot.max[2] = find_wall(robot, "Z", 1)
-		
+	
+	robot.move(z=robot.max[2] - 30)
+	robot.move(y = 100) # CONSTANT
+	first_plank_left_y = find_wall(robot, "X", 1)
 	robot.move(z=5800)
-	robot.move(x = 100, y = 100)
+	robot.moveDelta(dx=50)
+	
 	robot.move(z=robot.max[2] - 30)
 	pos = robot.getPosition()
 	
@@ -493,16 +506,23 @@ def calibrate(robot):
 	slot_wall_y_down = find_wall(robot, "Y", -1)
 	slot_wall_y_up = find_wall(robot, "Y", 1)
 	
+	robot.move(z=5800)
+	robot.moveDelta(dy=70)
+	robot.move(z=robot.max[2] - 30)
+	tmp_y_measurement = find_wall(robot, "Y", -1)	
+
+	plank_width = slot_wall_x_down - first_plank_left_y
+	flower_height = tmp_y_measurement - slot_wall_y_up
+	
 	print("First slot coordinates", slot_wall_x_up, slot_wall_x_down, slot_wall_y_up, slot_wall_y_down)
 	
 	robot.first_slot = [slot_wall_x_down, slot_wall_x_up, slot_wall_y_down, slot_wall_y_up, robot.max[2]]
 	
-	slot_width = slot_wall_x_up - slot_wall_x_down
-	slot_height = slot_wall_y_up - slot_wall_y_down
+	slot_width = slot_wall_x_up - slot_wall_x_down + plank_width
+	slot_height = slot_wall_y_up - slot_wall_y_down + flower_height
 	
-	# TODO: This is a terrible formula. Need to improve
 	check_slot_n_y = robot.n_slots_height - (1 - robot.n_slots_height % 2)
-	last_slot_center = [slot_wall_x_down + (robot.n_slots_width - 0.5) * slot_width + 50, slot_wall_y_down + (check_slot_n_y - 0.5) * slot_height + 100]
+	last_slot_center = [slot_wall_x_down + (robot.n_slots_width - 0.5) * slot_width, slot_wall_y_down + (check_slot_n_y - 0.5) * slot_height]
 	
 	robot.move(z=5800)
 	robot.move(x = last_slot_center[0], y = last_slot_center[1])
@@ -511,7 +531,7 @@ def calibrate(robot):
 
 	slot_wall_x_down = find_wall(robot, "X", -1)
 	slot_wall_x_up = find_wall(robot, "X", 1)
-	slot_wall_y_down = find_wall(robot, "Y", -1)	
+	slot_wall_y_down = find_wall(robot, "Y", -1)
 	slot_wall_y_up = find_wall(robot, "Y", 1)
 	
 	robot.moveDelta(dz=-70)
@@ -527,6 +547,10 @@ def calibrate(robot):
 	print(robot.min)
 	print(robot.max)
 	robot.calibrated = True
+	
+	calibration_end_time = time.time()
+	print("Calibration time: ")
+	print(calibration_end_time - calibration_start_time)
 
 def go_to_slot_center(robot, n_x, n_y):
 	if not robot.calibrated:
