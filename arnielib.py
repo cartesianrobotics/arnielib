@@ -471,8 +471,9 @@ def find_wall(robot, axis, direction):
 def calibrate(robot):
 	calibration_start_time = time.time()
 	
-	expected_slot_width = 248
-	expected_slot_height = 140
+	expected_slot_width = 278
+	expected_slot_height = 172
+	approx_const = 0.9
 	
 	robot.n_slots_width = 6
 	robot.n_slots_height = 4
@@ -501,9 +502,11 @@ def calibrate(robot):
 	robot.move(z=robot.max[2] - 30)
 	pos = robot.getPosition()
 	
-	slot_wall_x_down = find_wall(robot, "X", -1)	
+	slot_wall_x_down = find_wall(robot, "X", -1)
+	robot.moveDelta(dx=expected_slot_width * approx_const)
 	slot_wall_x_up = find_wall(robot, "X", 1)
 	slot_wall_y_down = find_wall(robot, "Y", -1)
+	robot.moveDelta(dy=expected_slot_height * approx_const)
 	slot_wall_y_up = find_wall(robot, "Y", 1)
 	
 	robot.move(z=5800)
@@ -522,16 +525,20 @@ def calibrate(robot):
 	slot_height = slot_wall_y_up - slot_wall_y_down + flower_height
 	
 	check_slot_n_y = robot.n_slots_height - (1 - robot.n_slots_height % 2)
-	last_slot_center = [slot_wall_x_down + (robot.n_slots_width - 0.5) * slot_width, slot_wall_y_down + (check_slot_n_y - 0.5) * slot_height]
+	last_slot_center_estimate = [slot_wall_x_down + (robot.n_slots_width - 0.5) * slot_width, slot_wall_y_down + (check_slot_n_y - 0.5) * slot_height]
 	
 	robot.move(z=5800)
-	robot.move(x = last_slot_center[0], y = last_slot_center[1])
+	robot.move(x = last_slot_center_estimate[0], y = last_slot_center_estimate[1])
 
 	find_wall(robot, "Z", 1)	
 
+	robot.moveDelta(dx= -expected_slot_width * approx_const / 2)
 	slot_wall_x_down = find_wall(robot, "X", -1)
+	robot.moveDelta(dx=expected_slot_width * approx_const)
 	slot_wall_x_up = find_wall(robot, "X", 1)
+	robot.moveDelta(dy= -expected_slot_height * approx_const / 2)
 	slot_wall_y_down = find_wall(robot, "Y", -1)
+	robot.moveDelta(dy=expected_slot_height * approx_const)
 	slot_wall_y_up = find_wall(robot, "Y", 1)
 	
 	robot.moveDelta(dz=-70)
