@@ -475,15 +475,17 @@ def calibrate(robot):
 	robot.move(z=robot.max[2] - 30)
 	pos = robot.getPosition()
 	
-	ApproachUntilTouch(robot, robot.current_tool, "X", 5.0)
-	slot_wall_x_up = robot.getPosition()[0]
 	ApproachUntilTouch(robot, robot.current_tool, "X", -5.0)
 	slot_wall_x_down = robot.getPosition()[0]
 	
-	ApproachUntilTouch(robot, robot.current_tool, "Y", 5.0)
-	slot_wall_y_up = robot.getPosition()[1]
+	ApproachUntilTouch(robot, robot.current_tool, "X", 5.0)
+	slot_wall_x_up = robot.getPosition()[0]
+	
 	ApproachUntilTouch(robot, robot.current_tool, "Y", -5.0)
 	slot_wall_y_down = robot.getPosition()[1]
+	
+	ApproachUntilTouch(robot, robot.current_tool, "Y", 5.0)
+	slot_wall_y_up = robot.getPosition()[1]
 	
 	print("First slot coordinates", slot_wall_x_up, slot_wall_x_down, slot_wall_y_up, slot_wall_y_down)
 	
@@ -501,19 +503,21 @@ def calibrate(robot):
 
 	ApproachUntilTouch(robot, robot.current_tool, "Z", 5.0)	
 	robot.moveDelta(dz=-30)
+
+	ApproachUntilTouch(robot, robot.current_tool, "X", -5.0)
+	slot_wall_x_down = robot.getPosition()[0]
 	
 	ApproachUntilTouch(robot, robot.current_tool, "X", 5.0)
 	slot_wall_x_up = robot.getPosition()[0]
 	
-	ApproachUntilTouch(robot, robot.current_tool, "Y", 5.0)
-	slot_wall_y_up = robot.getPosition()[1]
 	robot.moveDelta(dx=-5)
+	
 	ApproachUntilTouch(robot, robot.current_tool, "Y", -5.0)
 	slot_wall_y_down = robot.getPosition()[1]
-
-	ApproachUntilTouch(robot, robot.current_tool, "X", -5.0)
-	slot_wall_x_down = robot.getPosition()[0]
-
+	
+	ApproachUntilTouch(robot, robot.current_tool, "Y", 5.0)
+	slot_wall_y_up = robot.getPosition()[1]
+	
 	robot.moveDelta(dz=-70)
 	
 	print("Last slot coordinates", slot_wall_x_up, slot_wall_x_down, slot_wall_y_up, slot_wall_y_down)
@@ -543,9 +547,9 @@ def go_to_slot_center(robot, n_x, n_y):
 	first_slot_center = [(robot.first_slot[0] + robot.first_slot[1])/2, (robot.first_slot[2] + robot.first_slot[3])/2]
 	last_slot_center = [(robot.last_slot[0] + robot.last_slot[1])/2, (robot.last_slot[2] + robot.last_slot[3])/2]
 	
-	slot_width = (last_slot_center[0] - first_slot_center[0]) / robot.n_slots_width
+	slot_width = (last_slot_center[0] - first_slot_center[0]) / (robot.n_slots_width - 1)
 	check_slot_n_y = robot.n_slots_height - (1 - robot.n_slots_height % 2)
-	slot_height = (last_slot_center[1] - first_slot_center[1]) / check_slot_n_y
+	slot_height = (last_slot_center[1] - first_slot_center[1]) / (check_slot_n_y - 1)
 	
 	destination_x = first_slot_center[0] + n_x * slot_width
 	destination_y = first_slot_center[1] + n_y * slot_height
