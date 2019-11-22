@@ -4,8 +4,8 @@ TODO:
 2. Make a function for specifying tools. 
 3. Save tools in a file. 
 4. Make a function for swapping tools. 
-5. Measure the heights.
-6. Save the measurements in a file. 
+7. Make better serialization.
+8. Turn on the probe when connecting.
 
 """
 	
@@ -13,7 +13,7 @@ import serial
 import time
 import math
 import re
-import _thread
+import os 
 
 import sys
 import glob
@@ -472,49 +472,74 @@ def find_wall(robot, axis, direction):
 
 # This function is for testing calibration precision. The probe should touch the screw.
 def touch_left_top(robot, n_x, n_y):
-	target = robot.slots[n_x][n_y].LT
+	if not robot.calibrated:
+		print("ERROR: The robot is not calibrated.")
+		return
+	target = robot.params.slots[n_x][n_y].LT
 	robot.move(z=safe_height)
 	robot.move(x=target[0], y=target[1])
 	find_wall(robot, "Z", 1)
 	robot.move(z=safe_height)
 
 def calibrate_slot(robot, n_x, n_y):
+	calibration_start_time = time.time()
+
 	approx_const = 0.9
 
 	robot.move(z=safe_height)
-	go_to_slot_center(robot, n_x, n_y)
+	go_to_slot_center_calibration(robot, n_x, n_y)
 	z_max = find_wall(robot, "Z", 1)
 	robot.move(z=z_max - 30)
 	
-	inner_slot_w = robot.slot_width - robot.plank_width
-	inner_slot_h = robot.slot_height - robot.flower_height
+	inner_slot_w = robot.params.slot_width - robot.params.plank_width
+	inner_slot_h = robot.params.slot_height - robot.params.flower_height
 	
 	current_slot = slot()
 	
-	go_to_slot_center(robot, n_x, n_y)
-	robot.moveDelta(dx= -inner_slot_w * approx_const / 2, dy= -inner_slot_h * approx_const / 2)
-	current_slot.LT[0] = find_wall(robot, "X", -1) - robot.plank_width / 2
-	current_slot.LT[1] = find_wall(robot, "Y", -1) - robot.flower_height / 2
+	current_slot.floor_z = z_max
 	
-	go_to_slot_center(robot, n_x, n_y)
+	go_to_slot_center_calibration(robot, n_x, n_y)
+	robot.moveDelta(dx= -inner_slot_w * approx_const / 2, dy= -inner_slot_h * approx_const / 2)
+	current_slot.LT[0] = find_wall(robot, "X", -1) - robot.params.plank_width / 2
+	current_slot.LT[1] = find_wall(robot, "Y", -1) - robot.params.flower_height / 2
+	
+	go_to_slot_center_calibration(robot, n_x, n_y)
 	robot.moveDelta(dx= -inner_slot_w * approx_const / 2, dy= inner_slot_h * approx_const / 2)
-	current_slot.LB[0] = find_wall(robot, "X", -1) - robot.plank_width / 2
-	current_slot.LB[1] = find_wall(robot, "Y", 1) + robot.flower_height / 2
-
-	go_to_slot_center(robot, n_x, n_y)
+	current_slot.LB[0] = find_wall(robot, "X", -1) - robot.params.plank_width / 2
+	current_slot.LB[1] = find_wall(robot, "Y", 1) + robot.params.flower_height / 2
+	
+	go_to_slot_center_calibration(robot, n_x, n_y)
 	robot.moveDelta(dx= inner_slot_w * approx_const / 2, dy= -inner_slot_h * approx_const / 2)
-	current_slot.RT[0] = find_wall(robot, "X", 1) + robot.plank_width / 2
-	current_slot.RT[1] = find_wall(robot, "Y", -1) - robot.flower_height / 2
-
-	go_to_slot_center(robot, n_x, n_y)
+	current_slot.RT[0] = find_wall(robot, "X", 1) + robot.params.plank_width / 2
+	current_slot.RT[1] = find_wall(robot, "Y", -1) - robot.params.flower_height / 2
+	
+	go_to_slot_center_calibration(robot, n_x, n_y)
 	robot.moveDelta(dx= inner_slot_w * approx_const / 2, dy= inner_slot_h * approx_const / 2)
-	current_slot.RB[0] = find_wall(robot, "X", 1) + robot.plank_width / 2
-	current_slot.RB[1] = find_wall(robot, "Y", 1) + robot.flower_height / 2
+	current_slot.RB[0] = find_wall(robot, "X", 1) + robot.params.plank_width / 2
+	current_slot.RB[1] = find_wall(robot, "Y", 1) + robot.params.flower_height / 2
 	
 	robot.move(z=safe_height)
 	
-	robot.slots[n_x][n_y] = current_slot
+	robot.params.slots[n_x][n_y] = current_slot
 	
+	calibration_end_time = time.time()
+	print("Slot calibration time: ")
+	print(calibration_end_time - calibration_start_time)
+
+
+# This class is saved as JSON on calibration end. Don't add any methods.
+class robot_parameters():
+	def __init__(self, width_n, height_n):
+		self.width_n = width_n
+		self.height_n = height_n
+		self.slots = [[slot() for j in range(height_n)] for i in range(width_n)]
+		self.slot_width = -1
+		self.slot_height = -1
+		self.plank_width = -1
+		self.flower_height = -1
+		self.units_in_mm = [-1.0, -1.0, -1.0]
+		
+
 def calibrate(robot):
 	calibration_start_time = time.time()
 	
@@ -522,10 +547,9 @@ def calibrate(robot):
 	expected_slot_height = 172
 	approx_const = 0.9
 	
-	robot.n_slots_width = 6
-	robot.n_slots_height = 4
-	
-	robot.slots = [[0 for j in range(robot.n_slots_height)] for i in range(robot.n_slots_width)]
+	n_slots_width = 6
+	n_slots_height = 4
+	robot.params = robot_parameters(n_slots_width, n_slots_height)
 
 	robot.home()
 	robot.min = robot.getPosition()
@@ -565,18 +589,18 @@ def calibrate(robot):
 
 	plank_width = slot_wall_x_down - first_plank_left_y
 	flower_height = tmp_y_measurement - slot_wall_y_up
-	robot.plank_width = plank_width
-	robot.flower_height = flower_height
+	robot.params.plank_width = plank_width
+	robot.params.flower_height = flower_height
 	
 	print("First slot coordinates", slot_wall_x_up, slot_wall_x_down, slot_wall_y_up, slot_wall_y_down)
 	
 	robot.first_slot = [slot_wall_x_down, slot_wall_x_up, slot_wall_y_down, slot_wall_y_up, robot.max[2]]
 	
-	robot.slot_width = slot_wall_x_up - slot_wall_x_down + plank_width
-	robot.slot_height = slot_wall_y_up - slot_wall_y_down + flower_height
+	robot.params.slot_width = slot_wall_x_up - slot_wall_x_down + plank_width
+	robot.params.slot_height = slot_wall_y_up - slot_wall_y_down + flower_height
 	
-	check_slot_n_y = robot.n_slots_height - (1 - robot.n_slots_height % 2)
-	last_slot_center_estimate = [slot_wall_x_down + (robot.n_slots_width - 0.5) * robot.slot_width, slot_wall_y_down + (check_slot_n_y - 0.5) * robot.slot_height]
+	check_slot_n_y = robot.params.height_n - (1 - robot.params.height_n % 2)
+	last_slot_center_estimate = [slot_wall_x_down + (robot.params.width_n - 0.5) * robot.params.slot_width, slot_wall_y_down + (check_slot_n_y - 0.5) * robot.params.slot_height]
 	
 	robot.move(z=safe_height)
 	robot.move(x = last_slot_center_estimate[0], y = last_slot_center_estimate[1])
@@ -605,11 +629,51 @@ def calibrate(robot):
 	print(robot.min)
 	print(robot.max)
 	
-	
 	print("Last slot estimation error: " + str(last_slot_center_estimate[0] - (robot.last_slot[0] + robot.last_slot[1])/2) + ", " + str(last_slot_center_estimate[1] - (robot.last_slot[2] + robot.last_slot[3])/2))
 	
-	calibrate_slot(robot, 2, 2)
-	touch_left_top(robot, 2, 2)
+	
+#	for n_x in range(robot.params.width_n):
+#		for n_y2 in range(math.floor(robot.params.height_n / 2)):
+	for n_x in range(1):
+		for n_y2 in range(1):
+			calibrate_slot(robot, n_x, n_y2 * 2)
+	
+	# This is a temporary serialization solution. TODO: Find something reasonable. 
+	file = open('floor.csv', 'w')
+	file.write(str(robot.params.width_n))
+	file.write(", ")
+	file.write(str(robot.params.height_n))
+	file.write(", ")
+	file.write(str(robot.params.slot_width))
+	file.write(", ")
+	file.write(str(robot.params.slot_height))
+	file.write(", ")
+	file.write(str(robot.params.plank_width))
+	file.write(", ")
+	file.write(str(robot.params.flower_height))
+	file.write(", ")
+	for n_x in range(robot.params.width_n):
+		for n_y2 in range(math.floor(robot.params.height_n / 2)):
+			file.write(str(robot.params.slots[n_x][n_y2 * 2].LT[0]))
+			file.write(", ")
+			file.write(str(robot.params.slots[n_x][n_y2 * 2].LT[1]))
+			file.write(", ")
+			file.write(str(robot.params.slots[n_x][n_y2 * 2].LB[0]))
+			file.write(", ")
+			file.write(str(robot.params.slots[n_x][n_y2 * 2].LB[1]))
+			file.write(", ")
+			file.write(str(robot.params.slots[n_x][n_y2 * 2].RT[0]))
+			file.write(", ")
+			file.write(str(robot.params.slots[n_x][n_y2 * 2].RT[1]))
+			file.write(", ")
+			file.write(str(robot.params.slots[n_x][n_y2 * 2].RB[0]))
+			file.write(", ")
+			file.write(str(robot.params.slots[n_x][n_y2 * 2].RB[1]))
+			file.write(", ")
+			file.write(str(robot.params.slots[n_x][n_y2 * 2].floor_z))
+			file.write(", ")
+			
+	file.close()
 	
 	robot.calibrated = True
 	
@@ -617,24 +681,20 @@ def calibrate(robot):
 	print("Calibration time: ")
 	print(calibration_end_time - calibration_start_time)
 
-def go_to_slot_center(robot, n_x, n_y):
-	#if not robot.calibrated:
-	#	print("ERROR: The robot is not calibrated.")
-	#	return
-		
-	if n_x < 0 or n_x >= robot.n_slots_width:
+def go_to_slot_center_calibration(robot, n_x, n_y):
+	if n_x < 0 or n_x >= robot.params.width_n:
 		print("ERROR: Invalid x coordinate: " + str(n_x))
 		return
 		
-	if n_y < 0 or n_y >= robot.n_slots_height:
+	if n_y < 0 or n_y >= robot.params.height_n:
 		print("ERROR: Invalid y coordinate: " + str(n_y))
 		return
 		
 	first_slot_center = [(robot.first_slot[0] + robot.first_slot[1])/2, (robot.first_slot[2] + robot.first_slot[3])/2]
 	last_slot_center = [(robot.last_slot[0] + robot.last_slot[1])/2, (robot.last_slot[2] + robot.last_slot[3])/2]
 		
-	destination_x = first_slot_center[0] + n_x * robot.slot_width
-	destination_y = first_slot_center[1] + n_y * robot.slot_height
+	destination_x = first_slot_center[0] + n_x * robot.params.slot_width
+	destination_y = first_slot_center[1] + n_y * robot.params.slot_height
 	robot.move(x=destination_x, y=destination_y)
 
 class slot():
@@ -650,6 +710,7 @@ class slot():
 		self.LB = [-1, -1]
 		self.RT = [-1, -1]
 		self.RB = [-1, -1]
+		self.floor_z = -1
 	
 class tool_slot(slot):
 	"""
@@ -834,5 +895,37 @@ def connect():
 	print("Connected. Homing.")
 	time.sleep(1)
 	robot.home()
+	
+	if os.path.exists("floor.csv"):
+		file = open("floor.csv", "r")
+		params_string = file.read()
+		params_list = params_string.split(", ")
+		
+		width = int(params_list[0])
+		height = int(params_list[1])
+		
+		robot.params = robot_parameters(width, height)
+		
+		robot.params.slot_width = float(params_list[2])
+		robot.params.slot_height = float(params_list[3])
+		robot.params.plank_width = float(params_list[4])
+		robot.params.flower_height = float(params_list[5])
+
+		slot_i = 0
+		for n_x in range(robot.params.width_n):
+			for n_y2 in range(math.floor(robot.params.height_n / 2)):
+				robot.params.slots[n_x][n_y2 * 2].LT[0] = float(params_list[6 + slot_i * 9])
+				robot.params.slots[n_x][n_y2 * 2].LT[1] = float(params_list[7 + slot_i * 9])
+				robot.params.slots[n_x][n_y2 * 2].LB[0] = float(params_list[8 + slot_i * 9])
+				robot.params.slots[n_x][n_y2 * 2].LB[1] = float(params_list[9 + slot_i * 9])
+				robot.params.slots[n_x][n_y2 * 2].RT[0] = float(params_list[10 + slot_i * 9])
+				robot.params.slots[n_x][n_y2 * 2].RT[1] = float(params_list[11 + slot_i * 9])
+				robot.params.slots[n_x][n_y2 * 2].RB[0] = float(params_list[12 + slot_i * 9])
+				robot.params.slots[n_x][n_y2 * 2].RB[1] = float(params_list[13 + slot_i * 9])
+				robot.params.slots[n_x][n_y2 * 2].floor_z = float(params_list[14 + slot_i * 9])
+				slot_i += 1
+				
+		file.close()
+	
 	print("Done.")
 	return robot
