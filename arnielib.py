@@ -20,6 +20,8 @@ import glob
 
 robots = []
 
+safe_height = 5900
+
 def axis_index(axis):
 	result = axis.upper()
 	axes = ["X", "Y", "Z"]
@@ -467,6 +469,51 @@ def find_wall(robot, axis, direction):
 	step_back[axis_index(axis)] = -direction * step_back_length
 	robot.moveDelta(dx=step_back[0], dy=step_back[1], dz=step_back[2])
 	return result
+
+# This function is for testing calibration precision. The probe should touch the screw.
+def touch_left_top(robot, n_x, n_y):
+	target = robot.slots[n_x][n_y].LT
+	robot.move(z=safe_height)
+	robot.move(x=target[0], y=target[1])
+	find_wall(robot, "Z", 1)
+	robot.move(z=safe_height)
+
+def calibrate_slot(robot, n_x, n_y):
+	approx_const = 0.9
+
+	robot.move(z=safe_height)
+	go_to_slot_center(robot, n_x, n_y)
+	z_max = find_wall(robot, "Z", 1)
+	robot.move(z=z_max - 30)
+	
+	inner_slot_w = robot.slot_width - robot.plank_width
+	inner_slot_h = robot.slot_height - robot.flower_height
+	
+	current_slot = slot()
+	
+	go_to_slot_center(robot, n_x, n_y)
+	robot.moveDelta(dx= -inner_slot_w * approx_const / 2, dy= -inner_slot_h * approx_const / 2)
+	current_slot.LT[0] = find_wall(robot, "X", -1) - robot.plank_width / 2
+	current_slot.LT[1] = find_wall(robot, "Y", -1) - robot.flower_height / 2
+	
+	go_to_slot_center(robot, n_x, n_y)
+	robot.moveDelta(dx= -inner_slot_w * approx_const / 2, dy= inner_slot_h * approx_const / 2)
+	current_slot.LB[0] = find_wall(robot, "X", -1) - robot.plank_width / 2
+	current_slot.LB[1] = find_wall(robot, "Y", 1) + robot.flower_height / 2
+
+	go_to_slot_center(robot, n_x, n_y)
+	robot.moveDelta(dx= inner_slot_w * approx_const / 2, dy= -inner_slot_h * approx_const / 2)
+	current_slot.RT[0] = find_wall(robot, "X", 1) + robot.plank_width / 2
+	current_slot.RT[1] = find_wall(robot, "Y", -1) - robot.flower_height / 2
+
+	go_to_slot_center(robot, n_x, n_y)
+	robot.moveDelta(dx= inner_slot_w * approx_const / 2, dy= inner_slot_h * approx_const / 2)
+	current_slot.RB[0] = find_wall(robot, "X", 1) + robot.plank_width / 2
+	current_slot.RB[1] = find_wall(robot, "Y", 1) + robot.flower_height / 2
+	
+	robot.move(z=safe_height)
+	
+	robot.slots[n_x][n_y] = current_slot
 	
 def calibrate(robot):
 	calibration_start_time = time.time()
@@ -477,6 +524,8 @@ def calibrate(robot):
 	
 	robot.n_slots_width = 6
 	robot.n_slots_height = 4
+	
+	robot.slots = [[0 for j in range(robot.n_slots_height)] for i in range(robot.n_slots_width)]
 
 	robot.home()
 	robot.min = robot.getPosition()
@@ -496,7 +545,7 @@ def calibrate(robot):
 	robot.move(z=robot.max[2] - 30)
 	robot.move(y = 100) # CONSTANT
 	first_plank_left_y = find_wall(robot, "X", 1)
-	robot.move(z=5800)
+	robot.move(z=safe_height)
 	robot.moveDelta(dx=50)
 	
 	robot.move(z=robot.max[2] - 30)
@@ -509,25 +558,27 @@ def calibrate(robot):
 	robot.moveDelta(dy=expected_slot_height * approx_const)
 	slot_wall_y_up = find_wall(robot, "Y", 1)
 	
-	robot.move(z=5800)
+	robot.move(z=safe_height)
 	robot.moveDelta(dy=70)
 	robot.move(z=robot.max[2] - 30)
 	tmp_y_measurement = find_wall(robot, "Y", -1)	
 
 	plank_width = slot_wall_x_down - first_plank_left_y
 	flower_height = tmp_y_measurement - slot_wall_y_up
+	robot.plank_width = plank_width
+	robot.flower_height = flower_height
 	
 	print("First slot coordinates", slot_wall_x_up, slot_wall_x_down, slot_wall_y_up, slot_wall_y_down)
 	
 	robot.first_slot = [slot_wall_x_down, slot_wall_x_up, slot_wall_y_down, slot_wall_y_up, robot.max[2]]
 	
-	slot_width = slot_wall_x_up - slot_wall_x_down + plank_width
-	slot_height = slot_wall_y_up - slot_wall_y_down + flower_height
+	robot.slot_width = slot_wall_x_up - slot_wall_x_down + plank_width
+	robot.slot_height = slot_wall_y_up - slot_wall_y_down + flower_height
 	
 	check_slot_n_y = robot.n_slots_height - (1 - robot.n_slots_height % 2)
-	last_slot_center_estimate = [slot_wall_x_down + (robot.n_slots_width - 0.5) * slot_width, slot_wall_y_down + (check_slot_n_y - 0.5) * slot_height]
+	last_slot_center_estimate = [slot_wall_x_down + (robot.n_slots_width - 0.5) * robot.slot_width, slot_wall_y_down + (check_slot_n_y - 0.5) * robot.slot_height]
 	
-	robot.move(z=5800)
+	robot.move(z=safe_height)
 	robot.move(x = last_slot_center_estimate[0], y = last_slot_center_estimate[1])
 
 	find_wall(robot, "Z", 1)	
@@ -553,6 +604,13 @@ def calibrate(robot):
 	
 	print(robot.min)
 	print(robot.max)
+	
+	
+	print("Last slot estimation error: " + str(last_slot_center_estimate[0] - (robot.last_slot[0] + robot.last_slot[1])/2) + ", " + str(last_slot_center_estimate[1] - (robot.last_slot[2] + robot.last_slot[3])/2))
+	
+	calibrate_slot(robot, 2, 2)
+	touch_left_top(robot, 2, 2)
+	
 	robot.calibrated = True
 	
 	calibration_end_time = time.time()
@@ -560,9 +618,9 @@ def calibrate(robot):
 	print(calibration_end_time - calibration_start_time)
 
 def go_to_slot_center(robot, n_x, n_y):
-	if not robot.calibrated:
-		print("ERROR: The robot is not calibrated.")
-		return
+	#if not robot.calibrated:
+	#	print("ERROR: The robot is not calibrated.")
+	#	return
 		
 	if n_x < 0 or n_x >= robot.n_slots_width:
 		print("ERROR: Invalid x coordinate: " + str(n_x))
@@ -574,13 +632,9 @@ def go_to_slot_center(robot, n_x, n_y):
 		
 	first_slot_center = [(robot.first_slot[0] + robot.first_slot[1])/2, (robot.first_slot[2] + robot.first_slot[3])/2]
 	last_slot_center = [(robot.last_slot[0] + robot.last_slot[1])/2, (robot.last_slot[2] + robot.last_slot[3])/2]
-	
-	slot_width = (last_slot_center[0] - first_slot_center[0]) / (robot.n_slots_width - 1)
-	check_slot_n_y = robot.n_slots_height - (1 - robot.n_slots_height % 2)
-	slot_height = (last_slot_center[1] - first_slot_center[1]) / (check_slot_n_y - 1)
-	
-	destination_x = first_slot_center[0] + n_x * slot_width
-	destination_y = first_slot_center[1] + n_y * slot_height
+		
+	destination_x = first_slot_center[0] + n_x * robot.slot_width
+	destination_y = first_slot_center[1] + n_y * robot.slot_height
 	robot.move(x=destination_x, y=destination_y)
 
 class slot():
@@ -588,22 +642,15 @@ class slot():
 	Handles a slot on a robot base
 	"""
 	
-	def __init__(self, x, y, z):
+	def __init__(self):
 		"""
 		Initializes with center position of a slot (x, y, z)
 		"""
-		
-		self.provideCenterCoordinates(x, y, z)
-
-		
-	def provideCenterCoordinates(self, x, y, z):
-		self.x = x
-		self.y = y
-		self.z = z
-		
-	def getCenterCoordinates(self):
-		return self.x, self.y, self.z
-		
+		self.LT = [-1, -1]
+		self.LB = [-1, -1]
+		self.RT = [-1, -1]
+		self.RB = [-1, -1]
+	
 class tool_slot(slot):
 	"""
 	Handles a slot for a tool
