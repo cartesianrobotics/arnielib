@@ -452,6 +452,19 @@ class arnie(serial_device):
 			attempt_successful = 0
 		return attempt_successful
 
+def move_delta_mm(robot, dx=0, dy=0, dz=0):
+	if abs(dx) > 0.001 and robot.params["units_in_mm"][0] == -1:
+		print("ERROR: X axis units are not calibrated.")
+		return
+	if abs(dy) > 0.001 and robot.params["units_in_mm"][1] == -1:
+		print("ERROR: Y axis units are not calibrated.")
+		return
+	if abs(dz) > 0.001 and robot.params["units_in_mm"][2] == -1:
+		print("ERROR: Z axis units are not calibrated.")
+		return
+		
+	robot.moveDelta(dx=dx * robot.params["units_in_mm"][0], dy=dy * robot.params["units_in_mm"][1], dz=dz * robot.params["units_in_mm"][2])
+
 def find_wall(robot, axis, direction):
 	# direction should be either 1 or -1
 	if direction != 1 and direction != -1:
@@ -536,6 +549,9 @@ def calibrate_slot(robot, n_x, n_y):
 def calibrate(robot):
 	calibration_start_time = time.time()
 	
+	slot_width_mm = 150
+	slot_height_mm = 110
+	
 	expected_slot_width = 278
 	expected_slot_height = 172
 	approx_const = 0.9
@@ -584,6 +600,8 @@ def calibrate(robot):
 	robot.moveDelta(dy=expected_slot_height * approx_const)
 	slot_wall_y_up = find_wall(robot, "Y", 1)
 	
+	first_center = [(slot_wall_x_down + slot_wall_x_up) / 2, (slot_wall_y_down + slot_wall_y_up) / 2]
+	
 	robot.move(z=safe_height)
 	robot.moveDelta(dy=70)
 	robot.move(z=robot.max[2] - 30)
@@ -600,6 +618,7 @@ def calibrate(robot):
 	
 	robot.params['slot_width'] = slot_wall_x_up - slot_wall_x_down + plank_width
 	robot.params['slot_height'] = slot_wall_y_up - slot_wall_y_down + flower_height
+	# TODO: Move it to after calibration. 
 	
 	check_slot_n_y = robot.params['height_n'] - (1 - robot.params['height_n'] % 2)
 	last_slot_center_estimate = [slot_wall_x_down + (robot.params['width_n'] - 0.5) * robot.params['slot_width'], slot_wall_y_down + (check_slot_n_y - 0.5) * robot.params['slot_height']]
@@ -623,6 +642,15 @@ def calibrate(robot):
 	print("Last slot coordinates", slot_wall_x_up, slot_wall_x_down, slot_wall_y_up, slot_wall_y_down)
 
 	robot.last_slot = [slot_wall_x_down, slot_wall_x_up, slot_wall_y_down, slot_wall_y_up, robot.getPosition()[2]]
+
+	last_center = [(slot_wall_x_down + slot_wall_x_up) / 2, (slot_wall_y_down + slot_wall_y_up) / 2]
+	
+	robot.params['units_in_mm'][0] = (last_center[0] - first_center[0]) / (robot.params['width_n'] * slot_width_mm)
+	robot.params['units_in_mm'][1] = (last_center[1] - first_center[1]) / (check_slot_n_y * slot_height_mm)
+	# TODO: Move it to after calibration. 
+	
+	robot.params['slot_width'] = slot_wall_x_up - slot_wall_x_down + plank_width
+	robot.params['slot_height'] = slot_wall_y_up - slot_wall_y_down + flower_height	
 	
 	print("Slots:")
 	print(robot.first_slot)
@@ -639,6 +667,7 @@ def calibrate(robot):
 	for n_x in range(1):
 		for n_y2 in range(1):
 			calibrate_slot(robot, n_x, n_y2 * 2)
+			# TODO: fill in the rest automatically.
 	
 	# This is a temporary serialization solution. TODO: Find something reasonable. 
 	file = open('floor.json', 'w')
@@ -873,11 +902,11 @@ def connect():
 		file.close()
 		robot.calibrated = True
 	
-	ports = serial_ports()
-	if (len(ports) != 0):
-		# TODO: Handle other tools too.
-		robot.current_tool = touch_probe([0, 0, 0], ports[0])
-		robot.current_tool.openSerialPort()
+		ports = serial_ports()
+		if (len(ports) != 0):
+			# TODO: Handle other tools too.
+			robot.current_tool = touch_probe([0, 0, 0], ports[0])
+			robot.current_tool.openSerialPort()
 	
 	print("Done.")
 	return robot
