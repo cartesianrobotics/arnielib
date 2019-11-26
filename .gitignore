@@ -2,3 +2,4 @@ __pycache__
 floor.csv
 floor.json
 *.json
+*.txt

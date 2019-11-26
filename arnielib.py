@@ -37,6 +37,13 @@ uninitialized_slot = {
 def log(text):
 	log_file = open("log.txt", "a")
 	log_file.write(text)
+	log_file.write("\n")
+	log_file.close()
+
+def message_log(port, text, read_or_write):
+	log_file = open("message_log.txt", "a")
+	log_file.write(port + " " + read_or_write + " " + text)
+	log_file.write("\n")
 	log_file.close()
 	
 def log_value(name, value, axis):
@@ -119,6 +126,7 @@ class serial_device():
 		# Otherwise using whatever internal number instance may already have.
 		if port_name != "":
 			com_port = port_name
+			self.port_name = port_name
 		else:
 			com_port = self.port_name
 		# Make sure port is closed
@@ -167,16 +175,17 @@ class serial_device():
 		# Encode to binary
 		expr_enc = expression.encode()
 		
+		message_log(self.port_name, expression, "write")
 		# Writing to robot
 		self.port.write(expr_enc)
 		
 		
+	# TODO: Inline this function so that people don't circumvent logging by using this function. 
 	def read(self, number_of_bytes=1):
 		"""
 		Same functionality as Serial.read()
 		"""
 		return self.port.read(number_of_bytes).decode("utf-8")
-	
 	
 	def readAll(self, timeout=0.1):
 		"""
@@ -190,6 +199,8 @@ class serial_device():
 		# Continue reading until device output buffer is empty
 		while self.port.inWaiting():
 			message += self.read()
+		
+		message_log(self.port_name, message, "read")
 		return message
 
 	def writeAndWait(self, expression, eol=None, confirm_message='ok\n'):
@@ -610,14 +621,16 @@ def calibrate(robot):
 	robot.home()
 	robot.min = robot.getPosition()
 	robot.max = [0, 0, 0]
-	ports = serial_ports()
-	if len(ports) == 0:
-		print("ERROR: No tool connected.")
-		return
 	
-	robot.current_tool = touch_probe([0, 0, 0], ports[0])
-	robot.current_tool.openSerialPort()
-	# TODO: Make sure it's a probe.
+	if robot.current_tool.type == "none": 
+		ports = serial_ports()
+		if len(ports) == 0:
+			print("ERROR: No tool connected.")
+			return
+		
+		robot.current_tool = touch_probe([0, 0, 0], ports[0])
+		robot.current_tool.openSerialPort()
+		# TODO: Make sure it's a probe.
 	
 	robot.move(z=5900)
 	robot.max[2] = find_wall(robot, "Z", 1, "calibrate-0-0-floor")
@@ -791,6 +804,7 @@ class tool(serial_device):
 		To read all buffer, use readAll()
 		"""
 		
+		self.type = "none"
 		# Tool coordinates
 		self.x = position_tuple[0]
 		self.y = position_tuple[1]
@@ -809,6 +823,7 @@ class tool(serial_device):
 class touch_probe(tool):
 	def __init__(self, position_tuple, port_name):
 		super().__init__(position_tuple, port_name, eol="")
+		self.type = "probe"
 	
 	def isTouched(self):
 		self.write('d')
@@ -946,6 +961,7 @@ def connect():
 		return
 	
 	robot = arnie("COM3")
+	robot.current_tool = tool([0,0,0], "")
 	
 	robots.append(robot)
 	print("Connected. Homing.")
@@ -962,6 +978,7 @@ def connect():
 			robot.current_tool = touch_probe([0, 0, 0], ports[0])
 			robot.current_tool.openSerialPort()
 	
+	log("Start")
 	log(str(datetime.now()))
 	
 	print("Done.")
