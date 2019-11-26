@@ -503,8 +503,8 @@ def find_wall(robot, axis, direction, name="unknown"):
 		return
 		
 	ApproachUntilTouch(robot, robot.current_tool, axis, direction * 5.0) # CONSTANT
-	ApproachUntilTouch(robot, robot.current_tool, axis, direction * 0.5) # CONSTANT
-	result = robot.getPosition()[axis_index(axis)]
+	wall_coord = ApproachUntilTouch(robot, robot.current_tool, axis, direction * 0.5) # CONSTANT
+	result = wall_coord[axis_index(axis)]
 	step_back = [0, 0, 0]
 	if axis == "Z": 
 		step_back_length = 30 # CONSTANT
