@@ -546,6 +546,20 @@ def calibrate_slot(robot, n_x, n_y):
 	print("Slot calibration time: ")
 	print(calibration_end_time - calibration_start_time)
 
+def ziggurat_calibration(robot):
+	if not robot.calibrated:
+		print("ERROR: The robot is not calibrated. Use calibrate(robot) first.")
+		return
+	
+	first_slot = robot.params["slots"][0][0]
+	first_center = [(first_slot['LT'][0] + first_slot['RB'][0]) / 2, (first_slot['LT'][1] + first_slot['RB'][1]) / 2]
+	robot.move(x = first_center[0], y = first_center[1], z=5400)
+	top_height = find_wall(robot, "Z", 1)
+	move_delta_mm(robot, dy=50)
+	bottom_height = find_wall(robot, "Z", 1)
+	robot.params['units_in_mm'][2] = (bottom_height - top_height) / 40
+	
+
 def calibrate(robot):
 	calibration_start_time = time.time()
 	
@@ -645,8 +659,8 @@ def calibrate(robot):
 
 	last_center = [(slot_wall_x_down + slot_wall_x_up) / 2, (slot_wall_y_down + slot_wall_y_up) / 2]
 	
-	robot.params['units_in_mm'][0] = (last_center[0] - first_center[0]) / (robot.params['width_n'] * slot_width_mm)
-	robot.params['units_in_mm'][1] = (last_center[1] - first_center[1]) / (check_slot_n_y * slot_height_mm)
+	robot.params['units_in_mm'][0] = (last_center[0] - first_center[0]) / ((robot.params['width_n'] - 1) * slot_width_mm)
+	robot.params['units_in_mm'][1] = (last_center[1] - first_center[1]) / ((check_slot_n_y - 1) * slot_height_mm)
 	# TODO: Move it to after calibration. 
 	
 	robot.params['slot_width'] = slot_wall_x_up - slot_wall_x_down + plank_width
