@@ -864,49 +864,6 @@ def ApproachUntilTouch(arnie, touch_probe, axis, step):
 		arnie.moveDelta(dx=-delta_coord[0], dy=-delta_coord[1], dz=-delta_coord[2], speed_xy=1000)
 	
 	return x, y, z
-	
-def findCenter(arnie, touch_probe, axis, x, y, z, axis_lift=None, lift_val=None, second_end=None, step=5.0, fine_coef=5.0):
-	"""
-	"""
-	
-	# Moving to initial position
-	arnie.move(x=x, y=y, z=z, z_first=False)
-	
-	# Starting 3 approaches
-	ApproachUntilTouch(arnie, touch_probe, axis, step)
-	time.sleep(1)
-	ApproachUntilTouch(arnie, touch_probe, axis, step/fine_coef)
-	time.sleep(1)
-	val_min = ApproachUntilTouch(arnie, touch_probe, axis, step/(fine_coef*fine_coef))
-	
-	val_center = val_min
-	
-	if axis_lift is not None and lift_val is not None and second_end is not None:
-		# Lifting up and moving to the second position
-		# To measure from the other side
-		lift_coord = AxisToCoordinates(axis_lift, lift_val)
-		second_end_coord = AxisToCoordinates(axis, second_end, nonetype=True)
-		arnie.moveDelta(dx=lift_coord[0], dy=lift_coord[1], dz=lift_coord[2])
-		arnie.move(x=second_end_coord[0], y=second_end_coord[1], z=second_end_coord[2], z_first=False)
-		arnie.moveDelta(dx=-lift_coord[0], dy=-lift_coord[1], dz=-lift_coord[2])
-		
-		ApproachUntilTouch(arnie, touch_probe, axis, -step)
-		time.sleep(1)
-		ApproachUntilTouch(arnie, touch_probe, axis, -step/fine_coef)
-		time.sleep(1)
-		val_max = ApproachUntilTouch(arnie, touch_probe, axis, -step/(fine_coef*fine_coef))
-		
-		val_center = GenCenterXYZ(val_min[0], val_max[0], val_min[1], val_max[1], val_min[2], val_max[2])
-	
-	return val_center
-	
-def findXY(arnie, touch_probe, x1, y1, z, z_lift, x2, y2):
-	xmin, xmax = findCenter(arnie, touch_probe, 'x', x1, y1, z, axis_lift='z', lift_val=z_lift, second_end=x2)
-	ymin, ymax = findCenter(arnie, touch_probe, 'y', x1, y1, z, axis_lift='z', lift_val=z_lift, second_end=y2)
-	return xmin, xmax, ymin, ymax
-	
-def findZ(arnie, touch_probe, x, y, z):
-	return findCenter(arnie, touch_probe, 'z', x, y, z)[0]
 
 def load_floor(robot):
 		file = open("floor.json", "r")
