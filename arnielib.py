@@ -549,9 +549,15 @@ def find_wall(robot, axis, direction, name="unknown"):
 		print("ERROR: invalid direction.")
 		print(direction)
 		return
-		
-	ApproachUntilTouch(robot, robot.current_tool, axis, direction * 15.0) # CONSTANT
-	ApproachUntilTouch(robot, robot.current_tool, axis, direction * 2.0) # CONSTANT
+	
+	if axis == "Z": 
+		approach_step = 30.0 # CONSTANT
+	else:
+		approach_step = 15.0 # CONSTANT
+	
+	
+	ApproachUntilTouch(robot, robot.current_tool, axis, direction * approach_step) # CONSTANT
+	retract_until_no_touch(robot, robot.current_tool, axis, -direction * 3.0) # CONSTANT
 	wall_coord = ApproachUntilTouch(robot, robot.current_tool, axis, direction * 0.5) # CONSTANT
 	result = wall_coord[axis_index(axis)]
 	step_back = [0, 0, 0]
@@ -639,7 +645,8 @@ def ziggurat_calibration(robot):
 
 def update_floor(robot):
 	if os.path.exists("floor.json"):
-		copyfile("floor.json", str(datetime.now()) + "floor.json")
+		time_str = str(datetime.now()).replace(":", "_")
+		copyfile("floor.json", time_str + "floor.json")
 	file = open('floor.json', 'w')
 	file.write(json.dumps(robot.params))
 	file.close()
@@ -835,6 +842,20 @@ def AxisToCoordinates(axis, value, nonetype=False):
 		print("Wrong axis provided: ", axis)
 		print("Provide axis x, y or z")
 	return t
+
+def retract_until_no_touch(arnie, touch_probe, axis, step):
+	delta_coord = AxisToCoordinates(axis, step)
+	x, y, z = arnie.getPosition()
+	
+	if delta_coord != [0, 0, 0] and delta_coord != [None, None, None]:
+		while touch_probe.isTouched():
+			arnie.moveDelta(dx=delta_coord[0], dy=delta_coord[1], dz=delta_coord[2], speed_xy=1000)
+	else:
+		print ("Interrupted because wrong axis was provided.")
+		return
+		
+	x, y, z = arnie.getPosition()
+	return x, y, z
 	
 def ApproachUntilTouch(arnie, touch_probe, axis, step):
 	"""
@@ -858,10 +879,6 @@ def ApproachUntilTouch(arnie, touch_probe, axis, step):
 		return
 		
 	x, y, z = arnie.getPosition()
-	
-	while touch_probe.isTouched():
-		# Move backwards by a tiny step to disengage after sensor got engaged
-		arnie.moveDelta(dx=-delta_coord[0], dy=-delta_coord[1], dz=-delta_coord[2], speed_xy=1000)
 	
 	return x, y, z
 
