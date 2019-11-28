@@ -141,7 +141,8 @@ class serial_device():
 			if msg != "":
 				print("Msg: " + msg)
 				break
-
+				
+		self.recent_message = msg
 		
 	def close(self):
 		"""
@@ -225,12 +226,59 @@ class serial_device():
 				if re.search(pattern="ok\n", string=full_message):
 					self.recent_message = full_message
 					break
+
+class tool(serial_device):
+	def promote(self, position_tuple):
+		
+		"""
+		To initialize, provide position_tuple in the form (x, y, z). 
+		Those are coordinates at which the tool can be found on a base
+		
+		To establish connection with a tool, call openSerialPort()
+		
+		To send a command, use write()
+		
+		To read all buffer, use readAll()
+		"""
+		
+		self.type = "none"
+		# Tool coordinates
+		self.x = position_tuple[0]
+		self.y = position_tuple[1]
+		self.z = position_tuple[2]
+	
+class mobile_touch_probe(tool):
+	def promote(self):
+		self.type = "mobile_probe"
+	
+	def isTouched(self):
+		self.write('d')
+		response = self.readAll()
+		print("Mobile touch probe response: " + response)
+		return bool(int(re.split(pattern='/r/n', string=response)[0]))
+	
+class stationary_touch_probe(tool):
+	def promote(self):
+		self.type = "stationary_probe"
+	
+	def isTouched(self):
+		self.write('d')
+		response = self.readAll()
+		print("Stationary touch probe response: " + response)
+		return bool(int(re.split(pattern='/r/n', string=response)[0]))
+		
+GenCenter = lambda xmin, xmax: xmin + (xmax - xmin)/2.0
+GenCenterXYZ = lambda xmin, xmax, ymin, ymax, zmin, zmax: (
+	GenCenter(xmin, xmax), 
+	GenCenter(ymin, ymax),
+	GenCenter(zmin, zmax),
+)
 		
 class arnie(serial_device):
-	def __init__(self, port_name, baudrate=115200, timeout=0.1, speed_x=15000, speed_y=15000, speed_z=15000):
-		super().__init__(port_name, baudrate, timeout, eol="\r")
+	def promote(self, speed_x=15000, speed_y=15000, speed_z=15000):
 		self.calibrated = False
 		self.speed = [speed_x, speed_y, speed_z]
+		self.slot_tools = []
 		
 	def home(self, axes='ZXY'):
 		"""
@@ -502,7 +550,8 @@ def find_wall(robot, axis, direction, name="unknown"):
 		print(direction)
 		return
 		
-	ApproachUntilTouch(robot, robot.current_tool, axis, direction * 5.0) # CONSTANT
+	ApproachUntilTouch(robot, robot.current_tool, axis, direction * 15.0) # CONSTANT
+	ApproachUntilTouch(robot, robot.current_tool, axis, direction * 2.0) # CONSTANT
 	wall_coord = ApproachUntilTouch(robot, robot.current_tool, axis, direction * 0.5) # CONSTANT
 	result = wall_coord[axis_index(axis)]
 	step_back = [0, 0, 0]
@@ -720,6 +769,7 @@ def calibrate(robot):
 	print("Calibration time: ")
 	print(calibration_end_time - calibration_start_time)
 
+# TODO: inline this function.
 def fill_slots(robot):
 	for n_x in range(robot.params['width_n']):
 		for n_y2 in range(math.floor(robot.params['height_n'] / 2)):
@@ -759,84 +809,6 @@ def go_to_slot_center_calibration(robot, n_x, n_y):
 	log_value("go_to_slot_center_calibration-center_approx_" + str(n_x) + "_" + str(n_y), destination_y, "Y")
 	
 	robot.move(x=destination_x, y=destination_y)
-
-class slot():
-	"""
-	Handles a slot on a robot base
-	"""
-	
-	def __init__(self):
-		"""
-		Initializes with center position of a slot (x, y, z)
-		"""
-		self.LT = [-1, -1]
-		self.LB = [-1, -1]
-		self.RT = [-1, -1]
-		self.RB = [-1, -1]
-		self.floor_z = -1
-	
-class tool_slot(slot):
-	"""
-	Handles a slot for a tool
-	"""
-	
-	def __init__(self, x, y, z):
-		super().__init__(x=x, y=x, z=z)
-		
-	def defineResponseMessage(self, msg):
-		self.msg = msg
-	
-	def getResponseMessage(self):
-		return self.msg
-		
-class tool(serial_device):
-	
-	def __init__ (self, position_tuple, port_name, eol="\r\n"):
-		
-		"""
-		To initialize, provide position_tuple in the form (x, y, z). 
-		Those are coordinates at which the tool can be found on a base
-		
-		To establish connection with a tool, call openSerialPort()
-		
-		To send a command, use write()
-		
-		To read all buffer, use readAll()
-		"""
-		
-		self.type = "none"
-		# Tool coordinates
-		self.x = position_tuple[0]
-		self.y = position_tuple[1]
-		self.z = position_tuple[2]
-		# End of line
-		self.eol = eol
-		self.port_name = port_name
-	
-	
-	def getToolCoordinates(self):
-		"""
-		Returns coordinates at which the tool should be picked up
-		"""
-		return self.x, self.y, self.z  
-		
-class touch_probe(tool):
-	def __init__(self, position_tuple, port_name):
-		super().__init__(position_tuple, port_name, eol="")
-		self.type = "probe"
-	
-	def isTouched(self):
-		self.write('d')
-		response = self.readAll()
-		print("Touch probe response: " + response)
-		return bool(int(re.split(pattern='/r/n', string=response)[0]))
-		
-GenCenter = lambda xmin, xmax: xmin + (xmax - xmin)/2.0
-GenCenterXYZ = lambda xmin, xmax, ymin, ymax, zmin, zmax: (
-	GenCenter(xmin, xmax), 
-	GenCenter(ymin, ymax),
-	GenCenter(zmin, zmax),
-)
 
 def AxisToCoordinates(axis, value, nonetype=False):
 	"""
@@ -942,26 +914,48 @@ def load_floor(robot):
 		robot.params = json.loads(params_string)
 		file.close()
 
+def calibrate_stalagmite(robot):
+	robot.move(x=480, y=350, z=4700)
+
 def connect():
 	ports = serial_ports()
+
+	mtp = None
+	robot = None
+	stp = None
 	
-	if len(ports) == 0:
-		print("ERROR: Couldn't find any ports.")
-		return
+	for port in ports:
+		device = serial_device(port)
+		msg = device.recent_message
 		
-#	if len(ports) > 1:
-#		print("ERROR: More than one port detected. Please remove all tools manually.")
-#		return
+		if re.search(pattern="Marlin", string=msg):
+			device.__class__ = arnie
+			device.promote()
+			robot = device
 	
-	# TODO: What if we see a port, but it's not a robot?
-	
-	if "COM3" not in ports:
-		print("ERROR: unexpected ports. ")
+		if re.search(pattern="mobile touch probe", string=msg):
+			device.__class__ = tool
+			device.promote([0,0,0])
+			device.__class__ = mobile_touch_probe
+			device.promote()
+			mtp = device
+			
+		if re.search(pattern="stationary touch probe", string=msg):
+			device.__class__ = tool
+			device.promote([0,0,0])
+			device.__class__ = stationary_touch_probe
+			device.promote()
+			stp = device
+		
+	if robot == None:
+		print("ERROR: No robot detected.")
 		print(ports)
 		return
 	
-	robot = arnie("COM3")
-	robot.current_tool = tool([0,0,0], "")
+	if mtp != None:
+		robot.current_tool = mtp
+	if stp != None:
+		robot.slot_tools.append(stp)
 	
 	robots.append(robot)
 	print("Connected. Homing.")
