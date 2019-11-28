@@ -594,27 +594,22 @@ def calibrate_slot(robot, n_x, n_y):
 	inner_slot_w = robot.params['slot_width'] - robot.params['plank_width']
 	inner_slot_h = robot.params['slot_height'] - robot.params['flower_height']
 	
-	current_slot = deepcopy(uninitialized_slot)
-	
+	current_slot = deepcopy(uninitialized_slot)	
 	current_slot["floor_z"] = z_max
 	
-	go_to_slot_center_calibration(robot, n_x, n_y)
 	robot.moveDelta(dx= -inner_slot_w * approx_const / 2, dy= -inner_slot_h * approx_const / 2)
 	current_slot['LT'][0] = find_wall(robot, "X", -1, "calibrate_slot-LT" + str(n_x) + "_" + str(n_y)) - robot.params['plank_width'] / 2
 	current_slot['LT'][1] = find_wall(robot, "Y", -1, "calibrate_slot-LT" + str(n_x) + "_" + str(n_y)) - robot.params['flower_height'] / 2
 	
-	go_to_slot_center_calibration(robot, n_x, n_y)
-	robot.moveDelta(dx= -inner_slot_w * approx_const / 2, dy= inner_slot_h * approx_const / 2)
+	robot.moveDelta(dy= inner_slot_h * approx_const)
 	current_slot['LB'][0] = find_wall(robot, "X", -1, "calibrate_slot-LB" + str(n_x) + "_" + str(n_y)) - robot.params['plank_width'] / 2
 	current_slot['LB'][1] = find_wall(robot, "Y", 1, "calibrate_slot-LB" + str(n_x) + "_" + str(n_y)) + robot.params['flower_height'] / 2
 	
-	go_to_slot_center_calibration(robot, n_x, n_y)
-	robot.moveDelta(dx= inner_slot_w * approx_const / 2, dy= -inner_slot_h * approx_const / 2)
+	robot.moveDelta(dx= inner_slot_w * approx_const)
 	current_slot['RT'][0] = find_wall(robot, "X", 1, "calibrate_slot-RT" + str(n_x) + "_" + str(n_y)) + robot.params['plank_width'] / 2
 	current_slot['RT'][1] = find_wall(robot, "Y", -1, "calibrate_slot-RT" + str(n_x) + "_" + str(n_y)) - robot.params['flower_height'] / 2
 	
-	go_to_slot_center_calibration(robot, n_x, n_y)
-	robot.moveDelta(dx= inner_slot_w * approx_const / 2, dy= inner_slot_h * approx_const / 2)
+	robot.moveDelta(dy= -inner_slot_h * approx_const)
 	current_slot['RB'][0] = find_wall(robot, "X", 1, "calibrate_slot-RB" + str(n_x) + "_" + str(n_y)) + robot.params['plank_width'] / 2
 	current_slot['RB'][1] = find_wall(robot, "Y", 1, "calibrate_slot-RB" + str(n_x) + "_" + str(n_y)) + robot.params['flower_height'] / 2
 	
@@ -765,12 +760,12 @@ def calibrate(robot):
 		for n_y2 in range(math.floor(robot.params['height_n'] / 2)):
 			calibrate_slot(robot, n_x, n_y2 * 2)
 			
-	update_floor(robot)
-	
 	robot.calibrated = True
 	
 	fill_slots(robot)
 	ziggurat_calibration(robot)
+	
+	update_floor(robot)
 	
 	calibration_end_time = time.time()
 	print("Calibration time: ")
