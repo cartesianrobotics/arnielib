@@ -551,13 +551,15 @@ def find_wall(robot, axis, direction, name="unknown"):
 		return
 	
 	if axis == "Z": 
-		approach_step = 30.0 # CONSTANT
+		approach_step_1 = 45.0 # CONSTANT
+		approach_step_2 = 5.0
 	else:
-		approach_step = 15.0 # CONSTANT
+		approach_step_1 = 15.0 # CONSTANT
+		approach_step_2 = 3.0
 	
 	
-	ApproachUntilTouch(robot, robot.current_tool, axis, direction * approach_step) # CONSTANT
-	retract_until_no_touch(robot, robot.current_tool, axis, -direction * 3.0) # CONSTANT
+	ApproachUntilTouch(robot, robot.current_tool, axis, direction * approach_step_1) # CONSTANT
+	retract_until_no_touch(robot, robot.current_tool, axis, -direction * approach_step_2) # CONSTANT
 	wall_coord = ApproachUntilTouch(robot, robot.current_tool, axis, direction * 0.5) # CONSTANT
 	result = wall_coord[axis_index(axis)]
 	step_back = [0, 0, 0]
@@ -625,18 +627,74 @@ def goto_slot_center(robot, n_x, n_y):
 	slot = robot.params["slots"][n_x][n_y]
 	center = [(slot['LT'][0] + slot['RB'][0]) / 2, (slot['LT'][1] + slot['RB'][1]) / 2]
 	robot.move(x = center[0], y = center[1])
+
+def goto_slot_lt(robot, n_x, n_y):
+	slot = robot.params["slots"][n_x][n_y]
+	robot.move(x = slot['LT'][0], y = slot['LT'][1])
 	
 def ziggurat_calibration(robot):
 	if not robot.calibrated:
 		print("ERROR: The robot is not calibrated. Use calibrate(robot) first.")
 		return
 	
+	def find_next_step(axis, expected_width):
+		initial_wall = find_wall(robot, axis, 1, "ziggurat_calibration-find_next_step")
+		while True:
+			robot.moveDelta(dz=-30)
+			next_wall = find_wall(robot, axis, 1, "ziggurat_calibration-find_next_step")
+			if next_wall - initial_wall > expected_width * 0.8:
+				return next_wall
+	
+	robot.move(z=5400)
+	goto_slot_lt(robot, 0, 3)
+	robot.move(z=safe_height)
+	robot.moveDelta(dy=robot.params['slot_height'] / 2)
+	x1 = find_wall(robot, "X", 1, "ziggurat_calibration-x1")
+	z11 = find_wall(robot, "Z", 1, "ziggurat_calibration-z11")
+	x2 = find_next_step("X", 10 * robot.params['units_in_mm'][0])
+	z21 = find_wall(robot, "Z", 1, "ziggurat_calibration-z21")
+	x3 = find_next_step("X", 10 * robot.params['units_in_mm'][0])
+	z31 = find_wall(robot, "Z", 1, "ziggurat_calibration-z31")
+	x4 = find_next_step("X", 10 * robot.params['units_in_mm'][0])
+	z41 = find_wall(robot, "Z", 1, "ziggurat_calibration-z41")
+	
+	robot.move(z=5400)
+	goto_slot_lt(robot, 0, 3)
+	robot.move(z=safe_height)
+	robot.moveDelta(dx=robot.params['slot_width'] / 2)
+	y1 = find_wall(robot, "Y", 1, "ziggurat_calibration-y1")
+	z12 = find_wall(robot, "Z", 1, "ziggurat_calibration-z12")
+	y2 = find_next_step("Y", 10 * robot.params['units_in_mm'][0])
+	z22 = find_wall(robot, "Z", 1, "ziggurat_calibration-z22")
+	y3 = find_next_step("Y", 10 * robot.params['units_in_mm'][0])
+	z32 = find_wall(robot, "Z", 1, "ziggurat_calibration-z32")
+	y4 = find_next_step("Y", 10 * robot.params['units_in_mm'][0])
+	z42 = find_wall(robot, "Z", 1, "ziggurat_calibration-z42")
+	
 	robot.move(z=5400)
 	goto_slot_center(robot, 0, 3)
-	top_height = find_wall(robot, "Z", 1, "ziggurat_calibration-top")
-	move_delta_mm(robot, dy=50)
-	bottom_height = find_wall(robot, "Z", 1, "calibrate_slot-bottom")
-	robot.params['units_in_mm'][2] = (bottom_height - top_height) / 40
+	z5 = find_wall(robot, "Z", 1, "ziggurat_calibration-z4")
+	
+	rx1 = (x2 - x1) / 10
+	rx2 = (x3 - x2) / 10
+	rx3 = (x4 - x3) / 20
+
+	ry1 = (y2 - y1) / 10
+	ry2 = (y3 - y2) / 10
+	ry3 = (y4 - y3) / 10
+	
+	rz1 = (z21 - z11) / 10
+	rz2 = (z31 - z21) / 10
+	rz3 = (z41 - z31) / 10
+	rz4 = (z22 - z12) / 10
+	rz5 = (z32 - z22) / 10
+	rz6 = (z42 - z32) / 10
+	rz7 = (z5 - z41) / 10
+	rz8 = (z5 - z41) / 10
+	
+	robot.params['units_in_mm'][0] = (rx1 + rx2 + rx3) / 3
+	robot.params['units_in_mm'][1] = (ry1 + ry2 + ry3) / 3
+	robot.params['units_in_mm'][2] = (rz1 + rz2 + rz3 + rz4 + rz5 + rz6 + rz7 + rz8) / 8
 
 def update_floor(robot):
 	if os.path.exists("floor.json"):
