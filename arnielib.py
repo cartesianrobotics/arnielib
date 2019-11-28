@@ -640,61 +640,60 @@ def ziggurat_calibration(robot):
 	def find_next_step(axis, expected_width):
 		initial_wall = find_wall(robot, axis, 1, "ziggurat_calibration-find_next_step")
 		while True:
-			robot.moveDelta(dz=-30)
+			# TODO: Make a rough approimaion of units in mm by z axis and express this 60 in 10 mm times that.
+			robot.moveDelta(dz=-60)
 			next_wall = find_wall(robot, axis, 1, "ziggurat_calibration-find_next_step")
 			if next_wall - initial_wall > expected_width * 0.8:
 				return next_wall
+	
+	n_steps = 3
+	dxs = []
+	dys = []
+	dzs = []
 	
 	robot.move(z=5400)
 	goto_slot_lt(robot, 0, 3)
 	robot.move(z=safe_height)
 	robot.moveDelta(dy=robot.params['slot_height'] / 2)
-	x1 = find_wall(robot, "X", 1, "ziggurat_calibration-x1")
-	z11 = find_wall(robot, "Z", 1, "ziggurat_calibration-z11")
-	x2 = find_next_step("X", 10 * robot.params['units_in_mm'][0])
-	z21 = find_wall(robot, "Z", 1, "ziggurat_calibration-z21")
-	x3 = find_next_step("X", 10 * robot.params['units_in_mm'][0])
-	z31 = find_wall(robot, "Z", 1, "ziggurat_calibration-z31")
-	x4 = find_next_step("X", 10 * robot.params['units_in_mm'][0])
-	z41 = find_wall(robot, "Z", 1, "ziggurat_calibration-z41")
+	
+	old_x = find_wall(robot, "X", 1, "ziggurat_calibration-x1")
+	old_z = find_wall(robot, "Z", 1, "ziggurat_calibration-z11")
+	
+	for step_i in range(n_steps):
+		new_x = find_next_step("X", 10 * robot.params['units_in_mm'][0])
+		new_z = find_wall(robot, "Z", 1, "ziggurat_calibration-z" + str(step_i) + "1")
+		if step_i == n_steps - 1:
+			dxs.append((new_x - old_x) / 2)
+		else: 
+			dxs.append(new_x - old_x)
+		dzs.append(new_z - old_z)
+		old_x = new_x
+		old_z = new_z
 	
 	robot.move(z=5400)
 	goto_slot_lt(robot, 0, 3)
 	robot.move(z=safe_height)
 	robot.moveDelta(dx=robot.params['slot_width'] / 2)
-	y1 = find_wall(robot, "Y", 1, "ziggurat_calibration-y1")
-	z12 = find_wall(robot, "Z", 1, "ziggurat_calibration-z12")
-	y2 = find_next_step("Y", 10 * robot.params['units_in_mm'][0])
-	z22 = find_wall(robot, "Z", 1, "ziggurat_calibration-z22")
-	y3 = find_next_step("Y", 10 * robot.params['units_in_mm'][0])
-	z32 = find_wall(robot, "Z", 1, "ziggurat_calibration-z32")
-	y4 = find_next_step("Y", 10 * robot.params['units_in_mm'][0])
-	z42 = find_wall(robot, "Z", 1, "ziggurat_calibration-z42")
 	
-	robot.move(z=5400)
-	goto_slot_center(robot, 0, 3)
-	z5 = find_wall(robot, "Z", 1, "ziggurat_calibration-z4")
+	old_y = find_wall(robot, "Y", 1, "ziggurat_calibration-y1")
+	old_z = find_wall(robot, "Z", 1, "ziggurat_calibration-z12")
 	
-	rx1 = (x2 - x1) / 10
-	rx2 = (x3 - x2) / 10
-	rx3 = (x4 - x3) / 20
+	for step_i in range(n_steps):
+		new_y = find_next_step("Y", 10 * robot.params['units_in_mm'][0])
+		new_z = find_wall(robot, "Z", 1, "ziggurat_calibration-z" + str(step_i) + "2")
+		dys.append(new_y - old_y)
+		dzs.append(new_z - old_z)
+		old_y = new_y
+		old_z = new_z
+	
+	robot.params['units_in_mm'][0] = sum(dxs) / len(dxs) / 10
+	robot.params['units_in_mm'][1] = sum(dys) / len(dys) / 10
+	robot.params['units_in_mm'][2] = sum(dzs) / len(dzs) / 10
 
-	ry1 = (y2 - y1) / 10
-	ry2 = (y3 - y2) / 10
-	ry3 = (y4 - y3) / 10
-	
-	rz1 = (z21 - z11) / 10
-	rz2 = (z31 - z21) / 10
-	rz3 = (z41 - z31) / 10
-	rz4 = (z22 - z12) / 10
-	rz5 = (z32 - z22) / 10
-	rz6 = (z42 - z32) / 10
-	rz7 = (z5 - z41) / 10
-	rz8 = (z5 - z41) / 10
-	
-	robot.params['units_in_mm'][0] = (rx1 + rx2 + rx3) / 3
-	robot.params['units_in_mm'][1] = (ry1 + ry2 + ry3) / 3
-	robot.params['units_in_mm'][2] = (rz1 + rz2 + rz3 + rz4 + rz5 + rz6 + rz7 + rz8) / 8
+	print(robot.params['units_in_mm'])
+	print(dxs)
+	print(dys)
+	print(dzs)
 
 def update_floor(robot):
 	if os.path.exists("floor.json"):
