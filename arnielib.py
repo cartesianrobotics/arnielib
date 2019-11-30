@@ -940,8 +940,36 @@ def load_floor(robot):
 		robot.params = json.loads(params_string)
 		file.close()
 
-def calibrate_stalagmite(robot):
-	robot.move(x=480, y=350, z=4700)
+def connect_tool(port_name, robot=None):
+	device = serial_device(port_name)
+	msg = device.recent_message
+	
+	if re.search(pattern="Marlin", string=msg):
+		device.__class__ = arnie
+		device.promote()
+		robot = device
+
+	if re.search(pattern="mobile touch probe", string=msg):
+		device.__class__ = tool
+		device.promote([0,0,0])
+		device.__class__ = mobile_touch_probe
+		device.promote()
+		mtp = device
+		
+	if re.search(pattern="stationary touch probe", string=msg):
+		device.__class__ = tool
+		device.promote([0,0,0])
+		device.__class__ = stationary_touch_probe
+		device.promote()
+		stp = device
+
+	if robot != None:
+		if device.__class__ == mobile_touch_probe:
+			robot.current_tool = device
+		if device.__class__ == stationary_touch_probe:
+			robot.slots.append(device)
+	
+	return device
 
 def connect():
 	ports = serial_ports()
@@ -950,29 +978,16 @@ def connect():
 	robot = None
 	stp = None
 	
-	for port in ports:
-		device = serial_device(port)
-		msg = device.recent_message
+	for port_name in ports:
+		device = connect_tool(port_name)
 		
-		if re.search(pattern="Marlin", string=msg):
-			device.__class__ = arnie
-			device.promote()
+		if device.__class__ == arnie:
 			robot = device
-	
-		if re.search(pattern="mobile touch probe", string=msg):
-			device.__class__ = tool
-			device.promote([0,0,0])
-			device.__class__ = mobile_touch_probe
-			device.promote()
+		if device.__class__ == mobile_touch_probe:
 			mtp = device
-			
-		if re.search(pattern="stationary touch probe", string=msg):
-			device.__class__ = tool
-			device.promote([0,0,0])
-			device.__class__ = stationary_touch_probe
-			device.promote()
+		if device.__class__ == stationary_touch_probe:
 			stp = device
-		
+
 	if robot == None:
 		print("ERROR: No robot detected.")
 		print(ports)
