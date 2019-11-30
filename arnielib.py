@@ -666,7 +666,7 @@ def ziggurat_calibration(robot):
 			dxs.append((new_x - old_x) / 2)
 		else: 
 			dxs.append(new_x - old_x)
-		dzs.append(new_z - old_z)
+		dzs.append(old_z - new_z)
 		old_x = new_x
 		old_z = new_z
 	
@@ -682,7 +682,7 @@ def ziggurat_calibration(robot):
 		new_y = find_next_step("Y", 10 * robot.params['units_in_mm'][0])
 		new_z = find_wall(robot, "Z", 1, "ziggurat_calibration-z" + str(step_i) + "2")
 		dys.append(new_y - old_y)
-		dzs.append(new_z - old_z)
+		dzs.append(old_z - new_z)
 		old_y = new_y
 		old_z = new_z
 	
