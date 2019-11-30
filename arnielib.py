@@ -583,6 +583,40 @@ def touch_left_top(robot, n_x, n_y):
 	find_wall(robot, "Z", 1, "left_top_screw_" + str(n_x) + "_" + str(n_y))
 	robot.move(z=safe_height)
 
+def calibrate_stationary_probe_rack(robot, x_n, y_n):
+	center_xy = calc_slot_center(robot, x_n, y_n)
+	center_z = robot.params["slots"][x_n][y_n]["floor_z"] - 105 * robot.params["units_in_mm"][2]
+	rack_circle = calibrate_circle(robot, [center_xy[0], center_xy[1], center_z])
+	print(rack_circle)
+	
+
+def calibrate_circle(robot, approx_center):
+	robot.move(z=approx_center[2] - 100)
+	robot.move(x=approx_center[0], y=approx_center[1])
+	robot.move(z=approx_center[2])
+
+	x_pos = find_wall(robot, "X", 1, "calibrate_circle-x_pos")
+	x_neg = find_wall(robot, "X", -1, "calibrate_circle-x_neg")
+	
+	center_x = (x_pos + x_neg) / 2
+	robot.move(x=center_x)
+	
+	y_pos = find_wall(robot, "Y", 1, "calibrate_circle-y_pos")
+	y_neg = find_wall(robot, "Y", -1, "calibrate_circle-y_neg")
+	
+	radius_1 = (y_pos - y_neg) / 2
+	center_y = (y_pos + y_neg) / 2
+	robot.move(y=center_y)
+	
+	
+	x_pos = find_wall(robot, "X", 1, "calibrate_circle-x_pos2")
+	x_neg = find_wall(robot, "X", -1, "calibrate_circle-x_neg2")
+	radius_2 = (x_pos - x_neg) / 2
+	
+	radius = (radius_1 + radius_2) / 2
+	
+	return center_x, center_y, radius
+
 def calibrate_slot(robot, n_x, n_y):
 	calibration_start_time = time.time()
 
@@ -623,6 +657,10 @@ def calibrate_slot(robot, n_x, n_y):
 	print("Slot calibration time: ")
 	print(calibration_end_time - calibration_start_time)
 
+def calc_slot_center(robot, n_x, n_y):
+	slot = robot.params["slots"][n_x][n_y]
+	return [(slot['LT'][0] + slot['RB'][0]) / 2, (slot['LT'][1] + slot['RB'][1]) / 2]
+
 def goto_slot_center(robot, n_x, n_y):
 	slot = robot.params["slots"][n_x][n_y]
 	center = [(slot['LT'][0] + slot['RB'][0]) / 2, (slot['LT'][1] + slot['RB'][1]) / 2]
@@ -631,6 +669,18 @@ def goto_slot_center(robot, n_x, n_y):
 def goto_slot_lt(robot, n_x, n_y):
 	slot = robot.params["slots"][n_x][n_y]
 	robot.move(x = slot['LT'][0], y = slot['LT'][1])
+	
+def goto_slot_lb(robot, n_x, n_y):
+	slot = robot.params["slots"][n_x][n_y]
+	robot.move(x = slot['LB'][0], y = slot['LB'][1])
+	
+def goto_slot_rt(robot, n_x, n_y):
+	slot = robot.params["slots"][n_x][n_y]
+	robot.move(x = slot['RT'][0], y = slot['RT'][1])
+	
+def goto_slot_rb(robot, n_x, n_y):
+	slot = robot.params["slots"][n_x][n_y]
+	robot.move(x = slot['RB'][0], y = slot['RB'][1])
 	
 def ziggurat_calibration(robot):
 	if not robot.calibrated:
@@ -840,14 +890,14 @@ def fill_slots(robot):
 				robot.params['slots'][n_x][n_y2 * 2 + 1]["LT"] = deepcopy(robot.params['slots'][n_x][n_y2 * 2]["LB"])
 				robot.params['slots'][n_x][n_y2 * 2 + 1]["RT"] = deepcopy(robot.params['slots'][n_x][n_y2 * 2]["RB"])
 				robot.params['slots'][n_x][n_y2 * 2 + 1]["floor_z"] = deepcopy(robot.params['slots'][n_x][n_y2 * 2]["floor_z"])
-				if n_y2 * 2 + 2 < math.floor(robot.params['height_n']):
+				if n_y2 * 2 + 2 < math.floor(robot.params['height_n']) - 1:
 					robot.params['slots'][n_x][n_y2 * 2 + 1]["LB"] = deepcopy(robot.params['slots'][n_x][n_y2 * 2 + 2]["LT"])
 					robot.params['slots'][n_x][n_y2 * 2 + 1]["RB"] = deepcopy(robot.params['slots'][n_x][n_y2 * 2 + 2]["RT"])
 				else:
-					robot.params['slots'][n_x][n_y2 * 2 + 1]["LB"] = deepcopy(robot.params['slots'][n_x][n_y2 * 2 + 1]["LT"])
-					robot.params['slots'][n_x][n_y2 * 2 + 1]["RB"] = deepcopy(robot.params['slots'][n_x][n_y2 * 2 + 1]["RT"])
-					robot.params['slots'][n_x][n_y2 * 2 + 1]["LB"][1] += deepcopy(robot.params['slot_height'])
-					robot.params['slots'][n_x][n_y2 * 2 + 1]["RB"][1] += deepcopy(robot.params['slot_height'])
+					robot.params['slots'][n_x][n_y2 * 2 + 1]["LB"] = deepcopy(robot.params['slots'][n_x][n_y2 * 2]["LT"])
+					robot.params['slots'][n_x][n_y2 * 2 + 1]["RB"] = deepcopy(robot.params['slots'][n_x][n_y2 * 2]["RT"])
+					robot.params['slots'][n_x][n_y2 * 2 + 1]["LB"][1] += robot.params['slot_height']
+					robot.params['slots'][n_x][n_y2 * 2 + 1]["RB"][1] += robot.params['slot_height']
 
 def go_to_slot_center_calibration(robot, n_x, n_y):
 	if n_x < 0 or n_x >= robot.params['width_n']:
