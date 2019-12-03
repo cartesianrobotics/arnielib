@@ -609,12 +609,17 @@ def calibrate_plate(robot, x_n, y_n):
 	
 	should_be_floor = find_wall(robot, "Z", 1, "calibrate_plate-first_hole")
 	
+	robot.move(z=plate_level - 50)
+	tmp_result = calibrate_circle()
+	first_hole_center = [tmp_result[0], tmp_result[1]]
+
+	
 def check_floor_calibration(robot):
 	w_n = robot.params["width_n"]
 	h_n = robot.params["height_n"]
 	
-	for col_i in range(w_n):
-		for row_i in range(h_n):
+	for row_i in range(h_n):
+		for col_i in range(w_n):
 			goto_slot_lt(robot, col_i, row_i)
 			goto_slot_lb(robot, col_i, row_i)
 			goto_slot_rb(robot, col_i, row_i)
@@ -673,11 +678,11 @@ def calibrate_slot(robot, n_x, n_y):
 	
 	robot.move_delta(dx= inner_slot_w * approx_const)
 	current_slot['RB'][0] = find_wall(robot, "X", 1, "calibrate_slot-RT" + str(n_x) + "_" + str(n_y)) + robot.params['plank_width'] / 2
-	current_slot['RB'][1] = find_wall(robot, "Y", 1, "calibrate_slot-RT" + str(n_x) + "_" + str(n_y)) - robot.params['flower_height'] / 2
+	current_slot['RB'][1] = find_wall(robot, "Y", 1, "calibrate_slot-RT" + str(n_x) + "_" + str(n_y)) + robot.params['flower_height'] / 2
 	
 	robot.move_delta(dy= -inner_slot_h * approx_const)
 	current_slot['RT'][0] = find_wall(robot, "X", 1, "calibrate_slot-RB" + str(n_x) + "_" + str(n_y)) + robot.params['plank_width'] / 2
-	current_slot['RT'][1] = find_wall(robot, "Y", -1, "calibrate_slot-RB" + str(n_x) + "_" + str(n_y)) + robot.params['flower_height'] / 2
+	current_slot['RT'][1] = find_wall(robot, "Y", -1, "calibrate_slot-RB" + str(n_x) + "_" + str(n_y)) - robot.params['flower_height'] / 2
 	
 	robot.move(z=safe_height)
 	
