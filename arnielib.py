@@ -40,7 +40,8 @@ default_tool = {
 	"n_x": -1,
 	"n_y": -1,
 	"type": None, # probe, pipettor, etc.
-	"position": [-1, -1, -1]
+	"position": [-1, -1, -1],
+	"params": None
 }
 
 def log(text):
@@ -358,7 +359,7 @@ class arnie(serial_device):
 			self.moveAxis('Y', y, speed_xy)
 			self.moveAxis('Z', z, speed_z)
 	
-	def moveDelta(self, dx=None, dy=None, dz=None, z_first=True, speed_xy=None, speed_z=None):
+	def move_delta(self, dx=None, dy=None, dz=None, z_first=True, speed_xy=None, speed_z=None):
 		"""
 		Moves the robot arbitrarily to the current position
 		"""
@@ -489,8 +490,8 @@ class arnie(serial_device):
 		# To be used after failed initialization
 		self.openTool()
 		# Moving Arnie up and down for an attempt to physically reconnect
-		self.moveDelta(dz=-300)
-		self.moveDelta(dz=300)
+		self.move_delta(dz=-300)
+		self.move_delta(dz=300)
 		
 		attempt_successful = self.softInitToolAttempt(tool, total_attempts=1)
 		if not attempt_successful and total_attempts > current_attempt:
@@ -514,7 +515,7 @@ def move_delta_mm(robot, dx=0, dy=0, dz=0):
 		print("ERROR: Z axis units are not calibrated.")
 		return
 		
-	robot.moveDelta(dx=dx * robot.params["units_in_mm"][0], dy=dy * robot.params["units_in_mm"][1], dz=dz * robot.params["units_in_mm"][2])
+	robot.move_delta(dx=dx * robot.params["units_in_mm"][0], dy=dy * robot.params["units_in_mm"][1], dz=dz * robot.params["units_in_mm"][2])
 
 def find_wall(robot, axis, direction, name="unknown"):
 	# direction should be either 1 or -1
@@ -541,7 +542,7 @@ def find_wall(robot, axis, direction, name="unknown"):
 	else:
 		step_back_length = 5 # CONSTANT
 	step_back[axis_index(axis)] = -direction * step_back_length
-	robot.moveDelta(dx=step_back[0], dy=step_back[1], dz=step_back[2])
+	robot.move_delta(dx=step_back[0], dy=step_back[1], dz=step_back[2])
 	log_value(name, result, axis)
 	return result
 
@@ -565,6 +566,48 @@ def calibrate_stationary_probe_rack(robot, x_n, y_n):
 	robot.current_tool["position"][1] = rack_circle[1]
 	length_screw_mm = 35 
 	robot.current_tool["position"][2] = floor_z - (60 - length_screw_mm) * robot.params["units_in_mm"][2]
+
+def calibrate_plate(robot, x_n, y_n):
+	n_columns = 12
+	n_rows = 8	
+	
+	robot.move(z=3000)
+	goto_slot_lt(robot, x_n, y_n)
+	robot.move(z=5800)
+	plate_level = find_wall(robot, "Z", 1, "calibrate_plate-screw")
+	plate_safe_height = plate_level -  40 * robot.params["units_in_mm"][2]
+	
+	goto_slot_lt(robot, x_n, y_n)
+	robot.move(z=plate_level - 50)
+	robot.move_delta(dx=robot.params['slot_width'] / 2)
+	north = find_wall(robot, "Y", 1, "calibrate_plate-north")
+	robot.move(z=plate_safe_height)
+	
+	goto_slot_rt(robot, x_n, y_n)
+	robot.move(z=plate_level - 50)
+	robot.move_delta(dy=robot.params['slot_height'] / 2)
+	east = find_wall(robot, "X", -1, "calibrate_plate-east")
+	robot.move(z=plate_safe_height)
+	
+	goto_slot_rb(robot, x_n, y_n)
+	robot.move(z=plate_level - 50)
+	robot.move_delta(dx=-robot.params['slot_width'] / 2)
+	south = find_wall(robot, "Y", -1, "calibrate_plate-south")
+	robot.move(z=plate_safe_height)
+	
+	goto_slot_lb(robot, x_n, y_n)
+	robot.move(z=plate_level - 50)
+	robot.move_delta(dy=-robot.params['slot_height'] / 2)
+	west = find_wall(robot, "X", 1, "calibrate_plate-west")
+	robot.move(z=plate_safe_height)
+
+	approx_hole_height = (south - north) / n_rows
+	approx_hole_width = (east - west) / n_columns
+	approx_first_hole = [north + approx_hole_width / 2, west + approx_hole_height / 2]
+	
+	robot.move(x = approx_first_hole[0], y = approx_first_hole[1])
+	
+	should_be_floor = find_wall(robot, "Z", 1, "calibrate_plate-first_hole")
 	
 def check_floor_calibration(robot):
 	w_n = robot.params["width_n"]
@@ -620,21 +663,21 @@ def calibrate_slot(robot, n_x, n_y):
 	current_slot = deepcopy(default_slot)	
 	current_slot["floor_z"] = z_max
 	
-	robot.moveDelta(dx= -inner_slot_w * approx_const / 2, dy= -inner_slot_h * approx_const / 2)
+	robot.move_delta(dx= -inner_slot_w * approx_const / 2, dy= -inner_slot_h * approx_const / 2)
 	current_slot['LT'][0] = find_wall(robot, "X", -1, "calibrate_slot-LT" + str(n_x) + "_" + str(n_y)) - robot.params['plank_width'] / 2
 	current_slot['LT'][1] = find_wall(robot, "Y", -1, "calibrate_slot-LT" + str(n_x) + "_" + str(n_y)) - robot.params['flower_height'] / 2
 	
-	robot.moveDelta(dy= inner_slot_h * approx_const)
+	robot.move_delta(dy= inner_slot_h * approx_const)
 	current_slot['LB'][0] = find_wall(robot, "X", -1, "calibrate_slot-LB" + str(n_x) + "_" + str(n_y)) - robot.params['plank_width'] / 2
 	current_slot['LB'][1] = find_wall(robot, "Y", 1, "calibrate_slot-LB" + str(n_x) + "_" + str(n_y)) + robot.params['flower_height'] / 2
 	
-	robot.moveDelta(dx= inner_slot_w * approx_const)
-	current_slot['RT'][0] = find_wall(robot, "X", 1, "calibrate_slot-RT" + str(n_x) + "_" + str(n_y)) + robot.params['plank_width'] / 2
-	current_slot['RT'][1] = find_wall(robot, "Y", 1, "calibrate_slot-RT" + str(n_x) + "_" + str(n_y)) - robot.params['flower_height'] / 2
+	robot.move_delta(dx= inner_slot_w * approx_const)
+	current_slot['RB'][0] = find_wall(robot, "X", 1, "calibrate_slot-RT" + str(n_x) + "_" + str(n_y)) + robot.params['plank_width'] / 2
+	current_slot['RB'][1] = find_wall(robot, "Y", 1, "calibrate_slot-RT" + str(n_x) + "_" + str(n_y)) - robot.params['flower_height'] / 2
 	
-	robot.moveDelta(dy= -inner_slot_h * approx_const)
-	current_slot['RB'][0] = find_wall(robot, "X", 1, "calibrate_slot-RB" + str(n_x) + "_" + str(n_y)) + robot.params['plank_width'] / 2
-	current_slot['RB'][1] = find_wall(robot, "Y", -1, "calibrate_slot-RB" + str(n_x) + "_" + str(n_y)) + robot.params['flower_height'] / 2
+	robot.move_delta(dy= -inner_slot_h * approx_const)
+	current_slot['RT'][0] = find_wall(robot, "X", 1, "calibrate_slot-RB" + str(n_x) + "_" + str(n_y)) + robot.params['plank_width'] / 2
+	current_slot['RT'][1] = find_wall(robot, "Y", -1, "calibrate_slot-RB" + str(n_x) + "_" + str(n_y)) + robot.params['flower_height'] / 2
 	
 	robot.move(z=safe_height)
 	
@@ -678,7 +721,7 @@ def ziggurat_calibration(robot):
 		initial_wall = find_wall(robot, axis, 1, "ziggurat_calibration-find_next_step")
 		while True:
 			# TODO: Make a rough approimaion of units in mm by z axis and express this 60 in 10 mm times that.
-			robot.moveDelta(dz=-60)
+			robot.move_delta(dz=-60)
 			next_wall = find_wall(robot, axis, 1, "ziggurat_calibration-find_next_step")
 			if next_wall - initial_wall > expected_width * 0.8:
 				return next_wall
@@ -691,7 +734,7 @@ def ziggurat_calibration(robot):
 	robot.move(z=5400)
 	goto_slot_lt(robot, 0, 3)
 	robot.move(z=safe_height)
-	robot.moveDelta(dy=robot.params['slot_height'] / 2)
+	robot.move_delta(dy=robot.params['slot_height'] / 2)
 	
 	old_x = find_wall(robot, "X", 1, "ziggurat_calibration-x1")
 	old_z = find_wall(robot, "Z", 1, "ziggurat_calibration-z11")
@@ -710,7 +753,7 @@ def ziggurat_calibration(robot):
 	robot.move(z=5400)
 	goto_slot_lt(robot, 0, 3)
 	robot.move(z=safe_height)
-	robot.moveDelta(dx=robot.params['slot_width'] / 2)
+	robot.move_delta(dx=robot.params['slot_width'] / 2)
 	
 	old_y = find_wall(robot, "Y", 1, "ziggurat_calibration-y1")
 	old_z = find_wall(robot, "Z", 1, "ziggurat_calibration-z12")
@@ -770,16 +813,16 @@ def calibrate(robot):
 	robot.move(y = 100) # CONSTANT
 	first_plank_left_y = find_wall(robot, "X", 1, "calibrate-first_plank_left")
 	robot.move(z=safe_height)
-	robot.moveDelta(dx=50)
+	robot.move_delta(dx=50)
 	
 	robot.move(z=robot.max[2] - 30)
 	pos = robot.getPosition()
 	
 	slot_wall_x_down = find_wall(robot, "X", -1, "calibrate-first_slot_down")
-	robot.moveDelta(dx=expected_slot_width * approx_const)
+	robot.move_delta(dx=expected_slot_width * approx_const)
 	slot_wall_x_up = find_wall(robot, "X", 1, "calibrate-first_slot_up")
 	slot_wall_y_down = find_wall(robot, "Y", -1, "calibrate-first_slot_down")
-	robot.moveDelta(dy=expected_slot_height * approx_const)
+	robot.move_delta(dy=expected_slot_height * approx_const)
 	slot_wall_y_up = find_wall(robot, "Y", 1, "calibrate-first_slot_up")
 	
 	first_center = [(slot_wall_x_down + slot_wall_x_up) / 2, (slot_wall_y_down + slot_wall_y_up) / 2]
@@ -787,7 +830,7 @@ def calibrate(robot):
 	log_value("calibrate-first_center_approx", first_center[1], "Y")
 	
 	robot.move(z=safe_height)
-	robot.moveDelta(dy=70)
+	robot.move_delta(dy=70)
 	robot.move(z=robot.max[2] - 30)
 	tmp_y_measurement = find_wall(robot, "Y", -1, "calibrate-flower_top")	
 
@@ -813,16 +856,16 @@ def calibrate(robot):
 
 	find_wall(robot, "Z", 1, "calibrate-last_slot_center")	
 
-	robot.moveDelta(dx= -expected_slot_width * approx_const / 2)
+	robot.move_delta(dx= -expected_slot_width * approx_const / 2)
 	slot_wall_x_down = find_wall(robot, "X", -1, "calibrate-last_slot_down")
-	robot.moveDelta(dx=expected_slot_width * approx_const)
+	robot.move_delta(dx=expected_slot_width * approx_const)
 	slot_wall_x_up = find_wall(robot, "X", 1, "calibrate-last_slot_up")
-	robot.moveDelta(dy= -expected_slot_height * approx_const / 2)
+	robot.move_delta(dy= -expected_slot_height * approx_const / 2)
 	slot_wall_y_down = find_wall(robot, "Y", -1, "calibrate-last_slot_down")
-	robot.moveDelta(dy=expected_slot_height * approx_const)
+	robot.move_delta(dy=expected_slot_height * approx_const)
 	slot_wall_y_up = find_wall(robot, "Y", 1, "calibrate-last_slot_up")
 	
-	robot.moveDelta(dz=-70)
+	robot.move_delta(dz=-70)
 	
 	robot.last_slot = [slot_wall_x_down, slot_wall_x_up, slot_wall_y_down, slot_wall_y_up, robot.getPosition()[2]]
 
@@ -924,7 +967,7 @@ def retract_until_no_touch(arnie, touch_probe, axis, step):
 	
 	if delta_coord != [0, 0, 0] and delta_coord != [None, None, None]:
 		while touch_probe.isTouched():
-			arnie.moveDelta(dx=delta_coord[0], dy=delta_coord[1], dz=delta_coord[2], speed_xy=1000)
+			arnie.move_delta(dx=delta_coord[0], dy=delta_coord[1], dz=delta_coord[2], speed_xy=1000)
 	else:
 		print ("Interrupted because wrong axis was provided.")
 		return
@@ -948,7 +991,7 @@ def ApproachUntilTouch(arnie, touch_probe, axis, step):
 	if delta_coord != [0, 0, 0] and delta_coord != [None, None, None]:
 		while not touch_probe.isTouched():
 			# ApproachUntilTouchoach forward by a tiny step	
-			arnie.moveDelta(dx=delta_coord[0], dy=delta_coord[1], dz=delta_coord[2], speed_xy=1000)
+			arnie.move_delta(dx=delta_coord[0], dy=delta_coord[1], dz=delta_coord[2], speed_xy=1000)
 	else:
 		print ("Interrupted because wrong axis was provided.")
 		return
