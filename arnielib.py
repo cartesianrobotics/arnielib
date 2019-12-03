@@ -6,7 +6,7 @@ TODO:
 4. Make a function for swapping tools. 
 7. Make better serialization.
 8. Turn on the probe when connecting.
-
+9. Automatic unstucking for the stalactite.
 """
 	
 import serial
@@ -228,7 +228,7 @@ class serial_device():
 					break
 
 class tool(serial_device):
-	def promote(self, position_tuple):
+	def promote(self, position):
 		
 		"""
 		To initialize, provide position_tuple in the form (x, y, z). 
@@ -240,13 +240,9 @@ class tool(serial_device):
 		
 		To read all buffer, use readAll()
 		"""
-		
 		self.type = "none"
-		# Tool coordinates
-		self.x = position_tuple[0]
-		self.y = position_tuple[1]
-		self.z = position_tuple[2]
-	
+		self.position = position
+		
 class mobile_touch_probe(tool):
 	def promote(self):
 		self.type = "mobile_probe"
@@ -442,7 +438,7 @@ class arnie(serial_device):
 		self.move(x, y, z, z_first=False, speed_xy=speed_xy, speed_z=speed_z)
 	
 	
-	def getTool(self, tool, speed_xy=None, speed_z=None):
+	def get_tool(self, tool, speed_xy=None, speed_z=None):
 		"""
 		Engages with a tool, using tool instance for guidance
 		"""
@@ -465,27 +461,17 @@ class arnie(serial_device):
 			print("Failed to pickup tool. Program stopped.")
 			
 	
-	def returnTool(self, tool=None, position_tuple=None, speed_xy=None, speed_z=None):
+	def return_tool(self, tool):
 		"""
 		Returns tool back on its place.
 		The place is provided either with tool instance, or simply as position_tuple (x, y, z)
 		"""
-		if tool is not None:
-			x, y, z = tool.getToolCoordinates()
-		elif position_tuple is not None:
-			x = position_tuple[0]
-			y = position_tuple[1]
-			z = position_tuple[2]
-		else:
-			print ("Must provide coordinates")
-		
-		self.home()
-		try:
-			self.move(x, y, z, z_first=False, speed_xy=speed_xy, speed_z=speed_z)
-			self.openTool()
-			self.home()
-		except:
-			pass
+		dest = tool.position
+		self.home("Z")
+		self.move(x=dest[0], y=dest[1])
+		self.move(z=dest[2])
+		self.openTool()
+		self.home("Z")
 		
 
 	def softInitToolAttempt(self, tool, total_attempts=4, wait_time=2, current_attempt=0):
@@ -554,7 +540,7 @@ def find_wall(robot, axis, direction, name="unknown"):
 		approach_step_1 = 45.0 # CONSTANT
 		approach_step_2 = 5.0
 	else:
-		approach_step_1 = 15.0 # CONSTANT
+		approach_step_1 = 10.0 # CONSTANT
 		approach_step_2 = 3.0
 	
 	
@@ -585,10 +571,24 @@ def touch_left_top(robot, n_x, n_y):
 
 def calibrate_stationary_probe_rack(robot, x_n, y_n):
 	center_xy = calc_slot_center(robot, x_n, y_n)
-	center_z = robot.params["slots"][x_n][y_n]["floor_z"] - 105 * robot.params["units_in_mm"][2]
+	floor_z = robot.params["slots"][x_n][y_n]["floor_z"]
+	center_z = floor_z - 105 * robot.params["units_in_mm"][2]
 	rack_circle = calibrate_circle(robot, [center_xy[0], center_xy[1], center_z])
-	print(rack_circle)
+	robot.current_tool.position[0] = rack_circle[0]
+	robot.current_tool.position[1] = rack_circle[1]
+	length_screw_mm = 35 
+	robot.current_tool.position[2] = floor_z - (60 - length_screw_mm) * robot.params["units_in_mm"][2]
 	
+def check_floor_calibration(robot):
+	w_n = robot.params["width_n"]
+	h_n = robot.params["height_n"]
+	
+	for col_i in range(w_n):
+		for row_i in range(h_n):
+			goto_slot_lt(robot, col_i, row_i)
+			goto_slot_lb(robot, col_i, row_i)
+			goto_slot_rb(robot, col_i, row_i)
+			goto_slot_rt(robot, col_i, row_i)
 
 def calibrate_circle(robot, approx_center):
 	robot.move(z=approx_center[2] - 100)
