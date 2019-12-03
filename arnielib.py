@@ -7,6 +7,7 @@ TODO:
 7. Make better serialization.
 8. Turn on the probe when connecting.
 9. Automatic unstucking for the stalactite.
+10. Manual probe connection.
 """
 	
 import serial
@@ -26,12 +27,20 @@ robots = []
 
 safe_height = 5900
 
-uninitialized_slot = {
+default_slot = {
 	"LT": [-1, -1], 
 	"LB": [-1, -1], 
 	"RT": [-1, -1], 
 	"RB": [-1, -1], 
 	"floor_z": -1
+}
+
+default_tool = {
+	"slot": deepcopy(default_slot),
+	"n_x": -1,
+	"n_y": -1,
+	"type": None, # probe, pipettor, etc.
+	"position": [-1, -1, -1]
 }
 
 def log(text):
@@ -227,36 +236,14 @@ class serial_device():
 					self.recent_message = full_message
 					break
 
-class tool(serial_device):
-	def promote(self, position):
-		
-		"""
-		To initialize, provide position_tuple in the form (x, y, z). 
-		Those are coordinates at which the tool can be found on a base
-		
-		To establish connection with a tool, call openSerialPort()
-		
-		To send a command, use write()
-		
-		To read all buffer, use readAll()
-		"""
-		self.type = "none"
-		self.position = position
-		
-class mobile_touch_probe(tool):
-	def promote(self):
-		self.type = "mobile_probe"
-	
+class mobile_touch_probe(serial_device):
 	def isTouched(self):
 		self.write('d')
 		response = self.readAll()
 		print("Mobile touch probe response: " + response)
 		return bool(int(re.split(pattern='/r/n', string=response)[0]))
 	
-class stationary_touch_probe(tool):
-	def promote(self):
-		self.type = "stationary_probe"
-	
+class stationary_touch_probe(serial_device):
 	def isTouched(self):
 		self.write('d')
 		response = self.readAll()
@@ -274,7 +261,7 @@ class arnie(serial_device):
 	def promote(self, speed_x=15000, speed_y=15000, speed_z=15000):
 		self.calibrated = False
 		self.speed = [speed_x, speed_y, speed_z]
-		self.slot_tools = []
+		self.tools = []
 		
 	def home(self, axes='ZXY'):
 		"""
@@ -544,9 +531,9 @@ def find_wall(robot, axis, direction, name="unknown"):
 		approach_step_2 = 3.0
 	
 	
-	ApproachUntilTouch(robot, robot.current_tool, axis, direction * approach_step_1) # CONSTANT
-	retract_until_no_touch(robot, robot.current_tool, axis, -direction * approach_step_2) # CONSTANT
-	wall_coord = ApproachUntilTouch(robot, robot.current_tool, axis, direction * 0.5) # CONSTANT
+	ApproachUntilTouch(robot, robot.current_tool_device, axis, direction * approach_step_1) # CONSTANT
+	retract_until_no_touch(robot, robot.current_tool_device, axis, -direction * approach_step_2) # CONSTANT
+	wall_coord = ApproachUntilTouch(robot, robot.current_tool_device, axis, direction * 0.5) # CONSTANT
 	result = wall_coord[axis_index(axis)]
 	step_back = [0, 0, 0]
 	if axis == "Z": 
@@ -574,10 +561,10 @@ def calibrate_stationary_probe_rack(robot, x_n, y_n):
 	floor_z = robot.params["slots"][x_n][y_n]["floor_z"]
 	center_z = floor_z - 105 * robot.params["units_in_mm"][2]
 	rack_circle = calibrate_circle(robot, [center_xy[0], center_xy[1], center_z])
-	robot.current_tool.position[0] = rack_circle[0]
-	robot.current_tool.position[1] = rack_circle[1]
+	robot.current_tool["position"][0] = rack_circle[0]
+	robot.current_tool["position"][1] = rack_circle[1]
 	length_screw_mm = 35 
-	robot.current_tool.position[2] = floor_z - (60 - length_screw_mm) * robot.params["units_in_mm"][2]
+	robot.current_tool["position"][2] = floor_z - (60 - length_screw_mm) * robot.params["units_in_mm"][2]
 	
 def check_floor_calibration(robot):
 	w_n = robot.params["width_n"]
@@ -602,7 +589,7 @@ def calibrate_circle(robot, approx_center):
 	robot.move(x=center_x)
 	
 	y_pos = find_wall(robot, "Y", 1, "calibrate_circle-y_pos")
-	y_neg = find_wall(robot, "Y", -1, "calibrate_circle-y_neg")
+	y_neg = find_wall(robot, "Y", 	-1, "calibrate_circle-y_neg")
 	
 	radius_1 = (y_pos - y_neg) / 2
 	center_y = (y_pos + y_neg) / 2
@@ -630,7 +617,7 @@ def calibrate_slot(robot, n_x, n_y):
 	inner_slot_w = robot.params['slot_width'] - robot.params['plank_width']
 	inner_slot_h = robot.params['slot_height'] - robot.params['flower_height']
 	
-	current_slot = deepcopy(uninitialized_slot)	
+	current_slot = deepcopy(default_slot)	
 	current_slot["floor_z"] = z_max
 	
 	robot.moveDelta(dx= -inner_slot_w * approx_const / 2, dy= -inner_slot_h * approx_const / 2)
@@ -745,15 +732,11 @@ def ziggurat_calibration(robot):
 	print(dys)
 	print(dzs)
 
-def update_floor(robot):
-	if os.path.exists("floor.json"):
-		time_str = str(datetime.now()).replace(":", "_")
-		copyfile("floor.json", time_str + "floor.json")
-	file = open('floor.json', 'w')
-	file.write(json.dumps(robot.params))
-	file.close()
-
 def calibrate(robot):
+	if robot.current_tool["type"] != "stationary_probe": 
+		print("ERROR: No probe connected.")
+		return
+	
 	calibration_start_time = time.time()
 	
 	slot_width_mm = 150
@@ -779,16 +762,6 @@ def calibrate(robot):
 	robot.home()
 	robot.min = robot.getPosition()
 	robot.max = [0, 0, 0]
-	
-	if robot.current_tool.type == "none": 
-		ports = serial_ports()
-		if len(ports) == 0:
-			print("ERROR: No tool connected.")
-			return
-		
-		robot.current_tool = touch_probe([0, 0, 0], ports[0])
-		robot.current_tool.openSerialPort()
-		# TODO: Make sure it's a probe.
 	
 	robot.move(z=5900)
 	robot.max[2] = find_wall(robot, "Z", 1, "calibrate-0-0-floor")
@@ -882,7 +855,7 @@ def calibrate(robot):
 def fill_slots(robot):
 	for n_x in range(robot.params['width_n']):
 		for n_y2 in range(math.floor(robot.params['height_n'] / 2)):
-			robot.params['slots'][n_x][n_y2 * 2 + 1] = deepcopy(uninitialized_slot)
+			robot.params['slots'][n_x][n_y2 * 2 + 1] = deepcopy(default_slot)
 			
 			print("row" + str(n_y2 * 2 + 1))
 			
@@ -984,11 +957,33 @@ def ApproachUntilTouch(arnie, touch_probe, axis, step):
 	
 	return x, y, z
 
+def update_floor(robot):
+	if os.path.exists("floor.json"):
+		time_str = str(datetime.now()).replace(":", "_")
+		copyfile("floor.json", time_str + "floor.json")
+	file = open('floor.json', 'w')
+	file.write(json.dumps(robot.params))
+	file.close()
+
 def load_floor(robot):
-		file = open("floor.json", "r")
-		params_string = file.read()
-		robot.params = json.loads(params_string)
-		file.close()
+	file = open("floor.json", "r")
+	params_string = file.read()
+	robot.params = json.loads(params_string)
+	file.close()
+
+def update_tools(robot):
+	if os.path.exists("tools.json"):
+		time_str = str(datetime.now()).replace(":", "_")
+		copyfile("tools.json", time_str + "tools.json")
+	file = open('tools.json', 'w')
+	file.write(json.dumps(robot.tools))
+	file.close()
+
+def load_tools(robot):
+	file = open("tools.json", "r")
+	tools_string = file.read()
+	robot.tools = json.loads(tools_string)
+	file.close()
 
 def connect_tool(port_name, robot=None):
 	device = serial_device(port_name)
@@ -1000,22 +995,14 @@ def connect_tool(port_name, robot=None):
 		robot = device
 
 	if re.search(pattern="mobile touch probe", string=msg):
-		device.__class__ = tool
-		device.promote([0,0,0])
 		device.__class__ = mobile_touch_probe
-		device.promote()
-		mtp = device
 		
 	if re.search(pattern="stationary touch probe", string=msg):
-		device.__class__ = tool
-		device.promote([0,0,0])
 		device.__class__ = stationary_touch_probe
-		device.promote()
-		stp = device
 
 	if robot != None:
 		if device.__class__ == mobile_touch_probe:
-			robot.current_tool = device
+			robot.current_tool_device = device
 		if device.__class__ == stationary_touch_probe:
 			robot.slots.append(device)
 	
@@ -1043,26 +1030,30 @@ def connect():
 		print(ports)
 		return
 	
-	if mtp != None:
-		robot.current_tool = mtp
-	if stp != None:
-		robot.slot_tools.append(stp)
+	if os.path.exists("floor.json"):
+		load_floor(robot)
+		robot.calibrated = True
 	
+	if os.path.exists("tools.json"):
+		load_tools(robot)
+
 	robots.append(robot)
 	print("Connected. Homing.")
 	time.sleep(1)
 	robot.home()
 	
-	if os.path.exists("floor.json"):
-		load_floor(robot)
-		robot.calibrated = True
+	if mtp != None:
+		robot.current_tool_device = mtp
+		robot.current_tool = deepcopy(default_tool)
+		robot.current_tool["type"] = "stationary_probe"
+		for tool in robot.tools:
+			if tool["type"] == "stationary_probe":				
+				robot.current_tool = tool
 	
-		ports = serial_ports()
-		if (len(ports) != 0):
-			# TODO: Handle other tools too.
-			robot.current_tool = touch_probe([0, 0, 0], ports[0])
-			robot.current_tool.openSerialPort()
-	
+	if stp != None:
+		pass
+#		robot.slot_tools.append(stp)
+		
 	log("Start")
 	log(str(datetime.now()))
 	
