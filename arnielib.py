@@ -493,6 +493,7 @@ class arnie(serial_device):
 		self.current_tool = None
 		self.current_tool_device = None
 
+	# TODO: This function is never used. Clean it? 
 	def softInitToolAttempt(self, tool, total_attempts=4, wait_time=2, current_attempt=0):
 		# Attempt to initialize tool several times without robot movement
 		# Waiting before attempt, so electronics has time to connect
@@ -515,7 +516,7 @@ class arnie(serial_device):
 				print('Tool initialization failed after '+str(current_attempt)+' attempts')
 		return attempt_successful
 	
-	
+	# TODO: This function is never used. Clean it? 
 	def hardInitToolAttempt(self, tool, total_attempts=3, current_attempt=0):
 		# Attempt to re-connect to the tool. 
 		# To be used after failed initialization
@@ -554,6 +555,10 @@ def find_wall(robot, axis, direction, name="unknown"):
 		print("ERROR: invalid direction.")
 		print(direction)
 		return
+		
+	if robot.current_tool == None or robot.current_tool["type"] != "mobile_probe":
+		print("ERROR: No probe attached.")
+		return
 	
 	if axis == "Z": 
 		approach_step_1 = 45.0 # CONSTANT
@@ -561,7 +566,6 @@ def find_wall(robot, axis, direction, name="unknown"):
 	else:
 		approach_step_1 = 10.0 # CONSTANT
 		approach_step_2 = 3.0
-	
 	
 	ApproachUntilTouch(robot, robot.current_tool_device, axis, direction * approach_step_1) # CONSTANT
 	retract_until_no_touch(robot, robot.current_tool_device, axis, -direction * approach_step_2) # CONSTANT
@@ -576,6 +580,75 @@ def find_wall(robot, axis, direction, name="unknown"):
 	robot.move_delta(dx=step_back[0], dy=step_back[1], dz=step_back[2])
 	log_value(name, result, axis)
 	return result
+
+def find_wall_approx(robot, axis, direction, name="unknown", expect=-1, tolerance=-1):
+	# direction should be either 1 or -1
+	if direction != 1 and direction != -1:
+		print("ERROR: invalid direction.")
+		print(direction)
+		return
+		
+	if robot.current_tool == None or robot.current_tool["type"] != "mobile_probe":
+		print("ERROR: No probe attached.")
+		return
+	
+	if axis == "Z": 
+		approach_step = 45.0 # CONSTANT
+	else:
+		approach_step = 10.0 # CONSTANT
+	
+	wall_coord = ApproachUntilTouch(robot, robot.current_tool_device, axis, direction * approach_step, expect, tolerance) # CONSTANT
+	if wall_coord == -1:
+		return -1
+		
+	result = wall_coord[axis_index(axis)]
+	retract_until_no_touch(robot, robot.current_tool_device, axis, -direction * approach_step) # CONSTANT
+	step_back = [0, 0, 0]
+	if axis == "Z": 
+		step_back_length = 30 # CONSTANT
+	else:
+		step_back_length = 5 # CONSTANT
+	step_back[axis_index(axis)] = -direction * step_back_length
+	robot.move_delta(dx=step_back[0], dy=step_back[1], dz=step_back[2])
+	log_value(name, result, axis)
+	return result
+
+def find_wall_end(robot, axis_1, dir_1, axis_2, dir_2, tolerance, name="unknown"):
+	# axis_1 -- perpendicular to the wall
+	
+	def shift_until_no_wall(baseline, approach_step):
+		while True:
+			step = [0, 0, 0]
+			step[axis_index(axis_2)] = dir_2 * approach_step
+			robot.move_delta(dx=step[0], dy=step[1], dz=step[2])
+			wall = find_wall_approx(robot, axis_1, dir_1, "-fwe-" + str(approach_step) + "-" + name, baseline, 10 + robot.params["units_in_mm"][axis_index(axis_1)])
+			if wall == -1:
+				return robot.getPosition()[axis_index(axis_2)]
+			
+	start_position = robot.getPosition()
+	start_position_axis_1 = start_position[axis_index(axis_1)]
+
+	if axis_1 == "Z": 
+		approach_step_1 = 45.0 # CONSTANT
+		approach_step_2 = 5.0
+	else:
+		approach_step_1 = 10.0 # CONSTANT
+		approach_step_2 = 3.0
+		
+	approach_step_3 = 0.5
+
+	baseline = find_wall_approx(robot, axis_1, dir_1, "-fwe-baseline" + name)
+	shift_until_no_wall(baseline, approach_step_1)
+	
+	retract_dest = [0, 0, 0]
+	retract_dest[axis_index(axis_1)] = start_position_axis_1
+	robot.move(x=retract_dest[0], y=retract_dest[1], z=retract_dest[2])
+	
+	step = [0, 0, 0]
+	step[axis_index(axis_2)] = -dir_2 * approach_step_1
+	robot.move_delta(dx=step[0], dy=step[1], dz=step[2])
+	
+	result = shift_until_no_wall(baseline, approach_step_3)
 
 # This function is for testing calibration precision. The probe should touch the screw.
 def touch_left_top(robot, n_x, n_y):
@@ -620,7 +693,7 @@ def calibrate_plate(robot, x_n, y_n):
 	n_columns = 12
 	n_rows = 8	
 	
-	robot.move(z=3000)
+	robot.move(z=4500)
 	goto_slot_lt(robot, x_n, y_n)
 	robot.move(z=5800)
 	plate_level = find_wall(robot, "Z", 1, "calibrate_plate-screw")
@@ -630,7 +703,14 @@ def calibrate_plate(robot, x_n, y_n):
 	robot.move(z=plate_level - 50)
 	robot.move_delta(dx=robot.params['slot_width'] / 2)
 	north = find_wall(robot, "Y", 1, "calibrate_plate-north")
+	
+	find_wall_end(robot, "Y", 1, "Z", -1, 10 * robot.params["units_in_mm"][2], name="calibrate_plate-north")
+	
 	robot.move(z=plate_safe_height)
+	
+	
+	return
+	
 	
 	goto_slot_rt(robot, x_n, y_n)
 	robot.move(z=plate_level - 50)
@@ -652,7 +732,7 @@ def calibrate_plate(robot, x_n, y_n):
 
 	approx_hole_height = (south - north) / n_rows
 	approx_hole_width = (east - west) / n_columns
-	approx_first_hole = [north + approx_hole_width / 2, west + approx_hole_height / 2]
+	approx_first_hole = [west + approx_hole_width / 2, north + approx_hole_height / 2]
 	
 	robot.move(x = approx_first_hole[0], y = approx_first_hole[1])
 	
@@ -1029,7 +1109,7 @@ def retract_until_no_touch(arnie, touch_probe, axis, step):
 	x, y, z = arnie.getPosition()
 	return x, y, z
 	
-def ApproachUntilTouch(arnie, touch_probe, axis, step):
+def ApproachUntilTouch(arnie, touch_probe, axis, step, expectation=-1, tolerance=-1):
 	"""
 	Arnie will move along specified "axis" by "step"
 	Provide:
@@ -1044,8 +1124,12 @@ def ApproachUntilTouch(arnie, touch_probe, axis, step):
 	
 	if delta_coord != [0, 0, 0] and delta_coord != [None, None, None]:
 		while not touch_probe.isTouched():
-			# ApproachUntilTouchoach forward by a tiny step	
+			# ApproachUntilTouch forward by a tiny step	
 			arnie.move_delta(dx=delta_coord[0], dy=delta_coord[1], dz=delta_coord[2], speed_xy=1000)
+			if expectation != -1 and tolerance != -1:
+				position = arnie.getPosition()
+				if abs(position[axis_index(axis)] - expectation) > tolerance:
+					return -1
 	else:
 		print ("Interrupted because wrong axis was provided.")
 		return
