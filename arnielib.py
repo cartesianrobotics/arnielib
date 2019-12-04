@@ -557,7 +557,7 @@ def touch_left_top(robot, n_x, n_y):
 	find_wall(robot, "Z", 1, "left_top_screw_" + str(n_x) + "_" + str(n_y))
 	robot.move(z=safe_height)
 
-def calibrate_stationary_probe_rack(robot, x_n, y_n):
+def calibrate_mobile_probe_rack(robot, x_n, y_n):
 	center_xy = calc_slot_center(robot, x_n, y_n)
 	floor_z = robot.params["slots"][x_n][y_n]["floor_z"]
 	center_z = floor_z - 105 * robot.params["units_in_mm"][2]
@@ -915,8 +915,8 @@ def fill_slots(robot):
 					robot.params['slots'][n_x][n_y2 * 2 + 1]["LB"] = deepcopy(robot.params['slots'][n_x][n_y2 * 2 + 2]["LT"])
 					robot.params['slots'][n_x][n_y2 * 2 + 1]["RB"] = deepcopy(robot.params['slots'][n_x][n_y2 * 2 + 2]["RT"])
 				else:
-					robot.params['slots'][n_x][n_y2 * 2 + 1]["LB"] = deepcopy(robot.params['slots'][n_x][n_y2 * 2]["LT"])
-					robot.params['slots'][n_x][n_y2 * 2 + 1]["RB"] = deepcopy(robot.params['slots'][n_x][n_y2 * 2]["RT"])
+					robot.params['slots'][n_x][n_y2 * 2 + 1]["LB"] = deepcopy(robot.params['slots'][n_x][n_y2 * 2]["LB"])
+					robot.params['slots'][n_x][n_y2 * 2 + 1]["RB"] = deepcopy(robot.params['slots'][n_x][n_y2 * 2]["RB"])
 					robot.params['slots'][n_x][n_y2 * 2 + 1]["LB"][1] += robot.params['slot_height']
 					robot.params['slots'][n_x][n_y2 * 2 + 1]["RB"][1] += robot.params['slot_height']
 
