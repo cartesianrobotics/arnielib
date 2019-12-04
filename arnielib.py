@@ -8,6 +8,7 @@ TODO:
 8. Turn on the probe when connecting.
 9. Automatic unstucking for the stalactite.
 10. Manual probe connection.
+11. Stalactite screw length calibration.
 """
 	
 import serial
@@ -426,41 +427,71 @@ class arnie(serial_device):
 		self.move(x, y, z, z_first=False, speed_xy=speed_xy, speed_z=speed_z)
 	
 	
-	def get_tool(self, tool, speed_xy=None, speed_z=None):
+	def get_tool(self, x_n, y_n):
 		"""
 		Engages with a tool, using tool instance for guidance
 		"""
-		# Make sure docker is open
+		tool_to_get = None
+		for saved_tool in self.tools:
+			if x_n == saved_tool["n_x"] and y_n == saved_tool["n_y"]:
+				tool_to_get = deepcopy(saved_tool)
+				break
+		
+		if tool_to_get == None:
+			print("ERROR: slot (" + str(x_n) + ", " + str(y_n) + ") doesn't contain any tool.")
+			return 
+		
+		dest = tool_to_get["position"]
+		
 		self.openTool()
-		x, y, z = tool.getToolCoordinates()
-		self.approachToolPosition(x, y, z)
+		self.home("Z")
+		self.move(x=dest[0], y=dest[1])
+		self.move(z=dest[2])
+		self.closeTool()
+		self.current_tool = saved_tool
+		self.home("Z")
+		
+		# TODO: handle the case when the port is physically not connected
+		while True:
+			ports = serial_ports()
+			if len(ports) > 0:
+				break
+		
+		for port in ports:
+			connect_tool(port, self)
+			
+		#self.current_tool_device = 
 		
 		# Attempting to initialize the tool
-		attempt_successful = self.softInitToolAttempt(tool, total_attempts=2)
-		if not attempt_successful:
-			attempt_successful = self.hardInitToolAttempt(tool, total_attempts=3)
-		if attempt_successful:
+		#attempt_success	ful = self.softInitToolAttempt(tool, total_attempts=2)
+		#if not attempt_successful:
+		#	attempt_successful = self.hardInitToolAttempt(tool, total_attempts=3)
+		#if attempt_successful:
 			# Locking tool
-			self.closeTool()
+		#	self.closeTool()
 			# Moving back up
-			self.move(z=0, speed_z=speed_z)
-		else:
-			self.openTool()
-			print("Failed to pickup tool. Program stopped.")
+		#	self.move(z=0, speed_z=speed_z)
+		#else:
+		#	self.openTool()
+		#	print("Failed to pickup tool. Program stopped.")
 			
 	
-	def return_tool(self, tool):
+	def return_tool(self):
 		"""
 		Returns tool back on its place.
 		The place is provided either with tool instance, or simply as position_tuple (x, y, z)
 		"""
-		dest = tool.position
+		if self.current_tool == None:
+			print("ERROR: Trying to return tool, but no tool is connected.")
+		
+		dest = self.current_tool["position"]
 		self.home("Z")
 		self.move(x=dest[0], y=dest[1])
 		self.move(z=dest[2])
 		self.openTool()
 		self.home("Z")
-		
+		self.current_tool = None
+		self.current_tool_device = None
 
 	def softInitToolAttempt(self, tool, total_attempts=4, wait_time=2, current_attempt=0):
 		# Attempt to initialize tool several times without robot movement
@@ -559,13 +590,31 @@ def touch_left_top(robot, n_x, n_y):
 
 def calibrate_mobile_probe_rack(robot, x_n, y_n):
 	center_xy = calc_slot_center(robot, x_n, y_n)
+	floor_to_circle_rack_height = 105
 	floor_z = robot.params["slots"][x_n][y_n]["floor_z"]
-	center_z = floor_z - 105 * robot.params["units_in_mm"][2]
+	center_z = floor_z - (floor_to_circle_rack_height - 3) * robot.params["units_in_mm"][2]
 	rack_circle = calibrate_circle(robot, [center_xy[0], center_xy[1], center_z])
 	robot.current_tool["position"][0] = rack_circle[0]
 	robot.current_tool["position"][1] = rack_circle[1]
-	length_screw_mm = 35 
-	robot.current_tool["position"][2] = floor_z - (60 - length_screw_mm) * robot.params["units_in_mm"][2]
+	floor_to_bed_rack_height = 60
+	length_screw_mm = 33.9
+	robot.current_tool["position"][2] = floor_z - (floor_to_bed_rack_height - length_screw_mm) * robot.params["units_in_mm"][2]
+	robot.current_tool["n_x"] = x_n
+	robot.current_tool["n_y"] = y_n
+	robot.current_tool["slot"] = deepcopy(robot.params["slots"][x_n][y_n])
+	
+	tool_exists = False
+	for tool_i in range(len(robot.tools)):
+		tool = tobot.tools[tool_i]
+		if tool["n_x"] == x_n and tool["n_y"] == y_n:
+			robot.tools[tool_i] = robot.current_tool
+			tool_exists = True
+			break
+	
+	if not tool_exists:
+		robot.tools.append(robot.current_tool)
+		
+	update_tools(robot)
 
 def calibrate_plate(robot, x_n, y_n):
 	n_columns = 12
@@ -1090,13 +1139,18 @@ def connect():
 	time.sleep(1)
 	robot.home()
 	
+	robot.current_device = None
+	robot.current_device_tool = None
+	
 	if mtp != None:
 		robot.current_tool_device = mtp
 		robot.current_tool = deepcopy(default_tool)
-		robot.current_tool["type"] = "stationary_probe"
-		for tool in robot.tools:
-			if tool["type"] == "stationary_probe":				
-				robot.current_tool = tool
+		robot.current_tool["type"] = "mobile_probe"
+
+		for saved_tool in robot.tools:
+			if saved_tool["type"] == "mobile_probe":
+				robot.current_tool = deepcopy(saved_tool)
+				
 	
 	if stp != None:
 		pass
