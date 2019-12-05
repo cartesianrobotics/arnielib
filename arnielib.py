@@ -693,55 +693,177 @@ def calibrate_plate(robot, x_n, y_n):
 	n_columns = 12
 	n_rows = 8	
 	
-	robot.move(z=4500)
+	slot = robot.params["slots"][x_n][y_n]
+	
+	#robot.move(z=4500)
+	robot.home("Z")
 	goto_slot_lt(robot, x_n, y_n)
 	robot.move(z=5800)
 	plate_level = find_wall(robot, "Z", 1, "calibrate_plate-screw")
-	plate_safe_height = plate_level -  40 * robot.params["units_in_mm"][2]
+	plate_safe_height = plate_level -  20 * robot.params["units_in_mm"][2]
 	
 	goto_slot_lt(robot, x_n, y_n)
 	robot.move(z=plate_level - 50)
-	robot.move_delta(dx=robot.params['slot_width'] / 2)
-	north = find_wall(robot, "Y", 1, "calibrate_plate-north")
+	robot.move_delta(dx=robot.params['slot_width'] / 3)
+	north1 = find_wall(robot, "Y", 1, "calibrate_plate-north1")
+	robot.move_delta(dx=robot.params['slot_width'] / 3)
+	north2 = find_wall(robot, "Y", 1, "calibrate_plate-north2")
 	
-	find_wall_end(robot, "Y", 1, "Z", -1, 10 * robot.params["units_in_mm"][2], name="calibrate_plate-north")
+	# find_wall_end(robot, "Y", 1, "Z", -1, 10 * robot.params["units_in_mm"][2], name="calibrate_plate-north")
 	
 	robot.move(z=plate_safe_height)
 	
-	
-	return
-	
-	
 	goto_slot_rt(robot, x_n, y_n)
 	robot.move(z=plate_level - 50)
-	robot.move_delta(dy=robot.params['slot_height'] / 2)
-	east = find_wall(robot, "X", -1, "calibrate_plate-east")
+	robot.move_delta(dy=robot.params['slot_height'] / 3)
+	east1 = find_wall(robot, "X", -1, "calibrate_plate-east1")
+	robot.move_delta(dy=robot.params['slot_height'] / 3)
+	east2 = find_wall(robot, "X", -1, "calibrate_plate-east2")
+
 	robot.move(z=plate_safe_height)
 	
 	goto_slot_rb(robot, x_n, y_n)
 	robot.move(z=plate_level - 50)
-	robot.move_delta(dx=-robot.params['slot_width'] / 2)
-	south = find_wall(robot, "Y", -1, "calibrate_plate-south")
+	robot.move_delta(dx=-robot.params['slot_width'] / 3)
+	south2 = find_wall(robot, "Y", -1, "calibrate_plate-south2")
+	robot.move_delta(dx=-robot.params['slot_width'] / 3)
+	south1 = find_wall(robot, "Y", -1, "calibrate_plate-south1")
 	robot.move(z=plate_safe_height)
 	
 	goto_slot_lb(robot, x_n, y_n)
 	robot.move(z=plate_level - 50)
-	robot.move_delta(dy=-robot.params['slot_height'] / 2)
-	west = find_wall(robot, "X", 1, "calibrate_plate-west")
+	robot.move_delta(dy=-robot.params['slot_height'] / 3)
+	west2 = find_wall(robot, "X", 1, "calibrate_plate-west2")
+	robot.move_delta(dy=-robot.params['slot_height'] / 3)
+	west1 = find_wall(robot, "X", 1, "calibrate_plate-west1")
 	robot.move(z=plate_safe_height)
 
-	approx_hole_height = (south - north) / n_rows
-	approx_hole_width = (east - west) / n_columns
-	approx_first_hole = [west + approx_hole_width / 2, north + approx_hole_height / 2]
-	
-	robot.move(x = approx_first_hole[0], y = approx_first_hole[1])
-	
-	should_be_floor = find_wall(robot, "Z", 1, "calibrate_plate-first_hole")
-	
-	robot.move(z=plate_level - 50)
-	tmp_result = calibrate_circle()
-	first_hole_center = [tmp_result[0], tmp_result[1]]
+	plate_center = [(west1 + east1 + west2 + east2) / 4, (north1 + south1 + north2 + south2) / 4]
 
+	robot.move(x = plate_center[0], y = plate_center[1])
+	plate_height = find_wall(robot, "Z", 1, "calibrate_plate-plate_center")
+	
+	# TODO: This bookkeeping has to happen after each tool calibration. Factor it out?	
+	plate_tool = deepcopy(default_tool)
+	plate_tool["position"][0] = plate_center[0]
+	plate_tool["position"][1] = plate_center[1]
+	plate_tool["position"][2] = plate_height
+	
+	plate_tool["n_x"] = x_n
+	plate_tool["n_y"] = y_n
+	plate_tool["slot"] = deepcopy(slot)
+	plate_tool["type"] = "plate"
+	
+	plate_tool["params"] = {
+		"north1": north1,
+		"north2": north2,
+		"south1": south1,
+		"south2": south2,
+		"east1": east1,
+		"east2": east2,
+		"west1": west1,
+		"west2": west2,
+		"height": plate_height,
+		"width_mm": 99, # First hole center to last hole center
+		"height_mm": 63, # First hole center to last hole center
+		"width_n": n_columns,
+		"height_n": n_rows
+	}
+	
+	tool_exists = False
+	# TODO: This search happens often. Factor it out?
+	for tool_i in range(len(robot.tools)):
+		tool = robot.tools[tool_i]
+		if tool["n_x"] == x_n and tool["n_y"] == y_n:
+			robot.tools[tool_i] = plate_tool
+			tool_exists = True
+			break
+	
+	if not tool_exists:
+		robot.tools.append(plate_tool)
+		
+	update_tools(robot)
+
+	#approx_hole_height = (south - north) / n_rows
+	#approx_hole_width = (east - west) / n_columns
+	#approx_first_hole = [west + approx_hole_width / 2, north + approx_hole_height / 2]
+	
+	#u_in_mm_x = robot.params["units_in_mm"][0]
+	#u_in_mm_y = robot.params["units_in_mm"][1]
+	#approx_first_hole = [plate_center[0] - 49.5 * u_in_mm_x, plate_center[1] - 31.5 * u_in_mm_y]
+	
+	#robot.move(x = approx_first_hole[0], y = approx_first_hole[1])
+	
+	#should_be_floor = find_wall(robot, "Z", 1, "calibrate_plate-first_hole")
+	
+	#robot.move(z=plate_level - 50)
+	#tmp_result = calibrate_circle()
+	#first_hole_center = [tmp_result[0], tmp_result[1]]
+
+def find_tool_i_by_coord(robot, x_n, y_n):
+	for tool_i in range(len(robot.tools)):
+		tool = robot.tools[tool_i]
+		if tool["n_x"] == x_n and tool["n_y"] == y_n:
+			return tool_i
+	
+	return -1
+	
+def goto_plate_hole(robot, x_n, y_n, hole_x_n, hole_y_n):
+	tool_i = find_tool_i_by_coord(robot, x_n, y_n)
+	if tool_i == -1:
+		print("ERROR: No tool in slot (" + str(x_n) + ", " + str(y_n) + ").")
+		return
+		
+	tool = robot.tools[tool_i]
+	
+	if tool["type"] != "plate":
+		print("ERROR: The tool in  slot (" + str(x_n) + ", " + str(y_n) + ") is not a plate.")
+		return
+	
+	west1 = tool["params"]["west1"]
+	west2 = tool["params"]["west2"]
+	east1 = tool["params"]["east1"]
+	east2 = tool["params"]["east2"]
+	north1 = tool["params"]["north1"]
+	north2 = tool["params"]["north2"]
+	south1 = tool["params"]["south1"]
+	south2 = tool["params"]["south2"]
+	
+	# TODO: More precise positioning that takes skewness into account.
+	width_u = robot.params["units_in_mm"][0] * tool["params"]["width_mm"]
+	height_u = robot.params["units_in_mm"][1] * tool["params"]["height_mm"]
+	plate_center = [(west1 + east1 + west2 + east2) / 4, (north1 + south1 + north2 + south2) / 4]
+	first_hole = [plate_center[0] - width_u / 2, plate_center[1] - height_u / 2]
+	
+	hole_width = width_u / (tool["params"]["width_n"] - 1)
+	hole_height = height_u / (tool["params"]["height_n"] - 1)
+	
+	dest_x = first_hole[0] + hole_x_n * hole_width
+	dest_y = first_hole[1] + hole_y_n * hole_height
+	dest_z = tool["params"]["height"] - 10
+	
+	print(dest_x, dest_y, dest_z)
+	
+	robot.move(x=dest_x, y=dest_y, z=dest_z)
+
+def check_plate_calibration(robot, x_n, y_n):
+	tool_i = find_tool_i_by_coord(robot, x_n, y_n)
+	if tool_i == -1:
+		print("ERROR: No tool in slot (" + str(x_n) + ", " + str(y_n) + ").")
+		return
+		
+	tool = robot.tools[tool_i]
+	
+	if tool["type"] != "plate":
+		print("ERROR: The tool in  slot (" + str(x_n) + ", " + str(y_n) + ") is not a plate.")
+		return
+	
+	robot.home("Z")
+	goto_slot_lt(robot, x_n, y_n)
+	
+	for column_i in range(tool["params"]["width_n"]):
+		for row_i in range(tool["params"]["height_n"]):
+			goto_plate_hole(robot, x_n, y_n, column_i, row_i)
 	
 def check_floor_calibration(robot):
 	w_n = robot.params["width_n"]
