@@ -458,7 +458,7 @@ class arnie(serial_device):
 				break
 		
 		for port in ports:
-			connect_tool(port, self)
+			self.current_tool_device = connect_tool(port, self)
 			
 		#self.current_tool_device = 
 		
@@ -621,7 +621,7 @@ def find_wall_end(robot, axis_1, dir_1, axis_2, dir_2, tolerance, name="unknown"
 			step = [0, 0, 0]
 			step[axis_index(axis_2)] = dir_2 * approach_step
 			robot.move_delta(dx=step[0], dy=step[1], dz=step[2])
-			wall = find_wall_approx(robot, axis_1, dir_1, "-fwe-" + str(approach_step) + "-" + name, baseline, 10 + robot.params["units_in_mm"][axis_index(axis_1)])
+			wall = find_wall_approx(robot, axis_1, dir_1, "-fwe-" + str(approach_step) + "-" + name, baseline, tolerance)
 			if wall == -1:
 				return robot.getPosition()[axis_index(axis_2)]
 			
@@ -649,6 +649,7 @@ def find_wall_end(robot, axis_1, dir_1, axis_2, dir_2, tolerance, name="unknown"
 	robot.move_delta(dx=step[0], dy=step[1], dz=step[2])
 	
 	result = shift_until_no_wall(baseline, approach_step_3)
+	return result
 
 # This function is for testing calibration precision. The probe should touch the screw.
 def touch_left_top(robot, n_x, n_y):
@@ -686,6 +687,57 @@ def calibrate_mobile_probe_rack(robot, x_n, y_n):
 	
 	if not tool_exists:
 		robot.tools.append(robot.current_tool)
+		
+	update_tools(robot)
+
+def calibrate_pipettor(robot, x_n, y_n):
+	pipettor_height_mm = 157
+	expected_z = robot.params["slots"][x_n][y_n]["floor_z"] - ((pipettor_height_mm - 1) * robot.params["units_in_mm"][2])
+	
+	robot.home("Z")
+	goto_slot_lt(robot, x_n, y_n)
+	robot.move(z=expected_z)
+	robot.move_delta(dx=robot.params['slot_width'] / 2)
+	north = find_wall(robot, "Y", 1, "calibrate_pipettor-north")
+
+	robot.move_delta(dz = -robot.params['units_in_mm'][2] * 30)
+	goto_slot_lt(robot, x_n, y_n)
+	robot.move(z=expected_z)
+	robot.move_delta(dy=robot.params['slot_height'] / 2)
+	east = find_wall(robot, "X", 1, "calibrate_pipettor-east")
+	
+	robot.move_delta(dz = -robot.params['units_in_mm'][2] * 30)
+	goto_slot_rb(robot, x_n, y_n)
+	robot.move(z=expected_z)
+	robot.move_delta(dx=-robot.params['slot_width'] / 2)
+	south = find_wall(robot, "Y", -1, "calibrate_pipettor-south")
+	
+	robot.move_delta(dz = -robot.params['units_in_mm'][2] * 30)
+	goto_slot_rb(robot, x_n, y_n)
+	robot.move(z=expected_z)
+	robot.move_delta(dy=-robot.params['slot_height'] / 2)
+	west = find_wall(robot, "X", -1, "calibrate_pipettor-west")
+
+	# TODO: This bookkeeping has to happen after each tool calibration. Factor it out?	
+	tool = deepcopy(default_tool)
+	tool["position"][0] = (east + west) / 2
+	tool["position"][1] = (north + south) / 2
+	length_screw_mm = 33.9
+	stalactite_height = 147
+	tool_height = 252
+	tool["position"][2] = robot.params["slots"][x_n][y_n]["floor_z"] + (- tool_height + length_screw_mm + stalactite_height) * robot.params["units_in_mm"][2]
+	
+	tool["n_x"] = x_n
+	tool["n_y"] = y_n
+	slot = robot.params["slots"][x_n][y_n]
+	tool["slot"] = deepcopy(slot)
+	tool["type"] = "pipettor"
+	
+	tool_i = find_tool_i_by_coord(robot, x_n, y_n)
+	if tool_i != -1:
+		robot.tools[tool_i] = tool
+	else:
+		robot.tools.append(tool)
 		
 	update_tools(robot)
 
