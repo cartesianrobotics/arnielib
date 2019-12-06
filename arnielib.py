@@ -9,6 +9,8 @@ TODO:
 9. Automatic unstucking for the stalactite.
 10. Manual probe connection.
 11. Stalactite screw length calibration.
+12. Make things more mathematically reasonable.
+13. Add checks like only calibrate if the stalactite is connected.
 """
 	
 import serial
@@ -754,6 +756,52 @@ def calibrate_pipettor(robot, x_n, y_n):
 		
 	update_tools(robot)
 
+def calibrate_rectangle(robot, rect, safe_height, measure_height, name):
+	lt = rect["LT"]
+	lb = rect["LB"]
+	rt = rect["RT"]
+	rb = rect["RB"]
+	rect_width = ((rt[0] - lt[0]) + (rb[0] - lb[0])) / 2
+	rect_height = ((lb[1] - lt[1]) + (rb[1] - rt[1])) / 2
+
+	robot.move(z=safe_height)
+	robot.move(x=lt[0], y=lt[1])
+	robot.move(z=measure_height)
+	robot.move_delta(dx=rect_width / 3)
+	north1 = find_wall(robot, "Y", 1, name + "calibrate_rectangle-north1")
+	robot.move_delta(dx=rect_width / 3)
+	north2 = find_wall(robot, "Y", 1, name + "calibrate_rectangle-north2")
+	
+	# I wanted to calibrate the height of the plate here, but then decided to do it in the center. 
+	# find_wall_end(robot, "Y", 1, "Z", -1, 10 * robot.params["units_in_mm"][2], name="calibrate_rectangle-north")
+	
+	robot.move(z=safe_height)
+	robot.move(x=rt[0], y=rt[1])
+	robot.move(z=measure_height)
+	robot.move_delta(dy=rect_height / 3)
+	east1 = find_wall(robot, "X", -1, name + "calibrate_rectangle-east1")
+	robot.move_delta(dy=rect_height / 3)
+	east2 = find_wall(robot, "X", -1, name + "calibrate_rectangle-east2")
+
+	robot.move(z=safe_height)
+	robot.move(x=rb[0], y=rb[1])
+	robot.move(z=measure_height)
+	robot.move_delta(dx=-rect_width / 3)
+	south2 = find_wall(robot, "Y", -1, name + "calibrate_rectangle-south2")
+	robot.move_delta(dx=-rect_width / 3)
+	south1 = find_wall(robot, "Y", -1, name + "calibrate_rectangle-south1")
+	
+	robot.move(z=safe_height)
+	robot.move(x=lb[0], y=lb[1])
+	robot.move(z=measure_height)
+	robot.move_delta(dy=-rect_height / 3)
+	west2 = find_wall(robot, "X", 1, name + "calibrate_rectangle-west2")
+	robot.move_delta(dy=-rect_height / 3)
+	west1 = find_wall(robot, "X", 1, name + "calibrate_rectangle-west1")
+	robot.move(z=safe_height)
+	
+	return [north1, north2, east1, east2, south1, south2, west1, west2]
+
 def calibrate_plate(robot, x_n, y_n):
 	n_columns = 12
 	n_rows = 8	
@@ -767,41 +815,7 @@ def calibrate_plate(robot, x_n, y_n):
 	plate_level = find_wall(robot, "Z", 1, "calibrate_plate-screw")
 	plate_safe_height = plate_level -  20 * robot.params["units_in_mm"][2]
 	
-	goto_slot_lt(robot, x_n, y_n)
-	robot.move(z=plate_level - 50)
-	robot.move_delta(dx=robot.params['slot_width'] / 3)
-	north1 = find_wall(robot, "Y", 1, "calibrate_plate-north1")
-	robot.move_delta(dx=robot.params['slot_width'] / 3)
-	north2 = find_wall(robot, "Y", 1, "calibrate_plate-north2")
-	
-	# find_wall_end(robot, "Y", 1, "Z", -1, 10 * robot.params["units_in_mm"][2], name="calibrate_plate-north")
-	
-	robot.move(z=plate_safe_height)
-	
-	goto_slot_rt(robot, x_n, y_n)
-	robot.move(z=plate_level - 50)
-	robot.move_delta(dy=robot.params['slot_height'] / 3)
-	east1 = find_wall(robot, "X", -1, "calibrate_plate-east1")
-	robot.move_delta(dy=robot.params['slot_height'] / 3)
-	east2 = find_wall(robot, "X", -1, "calibrate_plate-east2")
-
-	robot.move(z=plate_safe_height)
-	
-	goto_slot_rb(robot, x_n, y_n)
-	robot.move(z=plate_level - 50)
-	robot.move_delta(dx=-robot.params['slot_width'] / 3)
-	south2 = find_wall(robot, "Y", -1, "calibrate_plate-south2")
-	robot.move_delta(dx=-robot.params['slot_width'] / 3)
-	south1 = find_wall(robot, "Y", -1, "calibrate_plate-south1")
-	robot.move(z=plate_safe_height)
-	
-	goto_slot_lb(robot, x_n, y_n)
-	robot.move(z=plate_level - 50)
-	robot.move_delta(dy=-robot.params['slot_height'] / 3)
-	west2 = find_wall(robot, "X", 1, "calibrate_plate-west2")
-	robot.move_delta(dy=-robot.params['slot_height'] / 3)
-	west1 = find_wall(robot, "X", 1, "calibrate_plate-west1")
-	robot.move(z=plate_safe_height)
+	north1, north2, east1, east2, south1, south2, west1, west2 = calibrate_rectangle(robot, robot.params["slots"][x_n][y_n], plate_safe_height, plate_level - 50, "calibrate_plate-")
 
 	plate_center = [(west1 + east1 + west2 + east2) / 4, (north1 + south1 + north2 + south2) / 4]
 
