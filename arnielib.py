@@ -564,7 +564,7 @@ def move_delta_mm(robot, dx=0, dy=0, dz=0):
 		
 	robot.move_delta(dx=dx * robot.params["units_in_mm"][0], dy=dy * robot.params["units_in_mm"][1], dz=dz * robot.params["units_in_mm"][2])
 
-def find_wall(robot, axis, direction, name="unknown"):
+def find_wall(robot, axis, direction, name="unknown", touch_function=None):
 	# direction should be either 1 or -1
 	if direction != 1 and direction != -1:
 		print("ERROR: invalid direction.")
@@ -582,9 +582,9 @@ def find_wall(robot, axis, direction, name="unknown"):
 		approach_step_1 = 10.0 # CONSTANT
 		approach_step_2 = 3.0
 	
-	ApproachUntilTouch(robot, robot.current_tool_device, axis, direction * approach_step_1) # CONSTANT
-	retract_until_no_touch(robot, robot.current_tool_device, axis, -direction * approach_step_2) # CONSTANT
-	wall_coord = ApproachUntilTouch(robot, robot.current_tool_device, axis, direction * 0.5) # CONSTANT
+	ApproachUntilTouch(robot, robot.current_tool_device, axis, direction * approach_step_1, touch_function=touch_function) # CONSTANT
+	retract_until_no_touch(robot, robot.current_tool_device, axis, -direction * approach_step_2, touch_function=touch_function) # CONSTANT
+	wall_coord = ApproachUntilTouch(robot, robot.current_tool_device, axis, direction * 0.5, touch_function=touch_function) # CONSTANT
 	result = wall_coord[axis_index(axis)]
 	step_back = [0, 0, 0]
 	if axis == "Z": 
@@ -755,6 +755,60 @@ def calibrate_pipettor(robot, x_n, y_n):
 		robot.tools.append(tool)
 		
 	update_tools(robot)
+
+def calibrate_mobile_probe_tip(robot, x_n, y_n):
+	# x_n, y_n -- coordinates of the slot that contains the stalagmite.
+	stalagmite_height_mm = 130
+	slot = robot.params["slots"][x_n][y_n]
+	u_in_mm = robot.params["units_in_mm"]
+	
+	stat_probe = None
+	for device in robot.tool_devices:
+		if device.description["type"] == "stationary_probe":
+			stat_probe = device
+			break
+	
+	if stat_probe == None:
+		print("ERROR: No stationary probe is connected.")
+		return
+	
+	mob_probe = robot.current_tool_device
+	def touch_function():
+		return stat_probe.isTouched() or mob_probe.isTouched()
+	
+	robot.home("Z")
+	goto_slot_center(robot, x_n, y_n)
+	robot.move(z=slot["floor_z"] - (stalagmite_height_mm + 10) * u_in_mm[2])
+	height = find_wall(robot, "Z", 1, "calibrate_mobile_probe_tip-height", touch_function)
+	
+	move_delta_mm(robot, dx=10 * u_in_mm[0])
+	robot.move(z=height + 5 * u_in_mm[2])
+	east = find_wall(robot, "X", -1, "calibrate_mobile_probe_tip-east", touch_function)
+	robot.move(z=height - 5 * u_in_mm[2])
+	goto_slot_center(robot, x_n, y_n)
+	
+	move_delta_mm(robot, dx=-10 * u_in_mm[0])
+	robot.move(z=height + 5 * u_in_mm[2])
+	west = find_wall(robot, "X", 1, "calibrate_mobile_probe_tip-west", touch_function)
+	robot.move(z=height - 5 * u_in_mm[2])
+	goto_slot_center(robot, x_n, y_n)
+	
+	move_delta_mm(robot, dy=10 * u_in_mm[1])
+	robot.move(z=height + 5 * u_in_mm[2])
+	south = find_wall(robot, "Y", -1, "calibrate_mobile_probe_tip-south", touch_function)
+	robot.move(z=height - 5 * u_in_mm[2])
+	goto_slot_center(robot, x_n, y_n)
+	
+	move_delta_mm(robot, dy=-10 * u_in_mm[1])
+	robot.move(z=height + 5 * u_in_mm[2])
+	north = find_wall(robot, "Y", 1, "calibrate_mobile_probe_tip-north", touch_function)
+	robot.move(z=height - 5 * u_in_mm[2])
+	goto_slot_center(robot, x_n, y_n)
+	
+	tool_i = find_tool_i_by_type(robot, "mobile_probe")
+	robot.tools[tool_i]["params"] = {"tip": [(east + west) / 2, (south + north) / 2, height]}
+	update_tools(robot)
+	
 
 def calibrate_rectangle(robot, rect, safe_height, measure_height, name):
 	lt = rect["LT"]
@@ -1336,12 +1390,14 @@ def AxisToCoordinates(axis, value, nonetype=False):
 		print("Provide axis x, y or z")
 	return t
 
-def retract_until_no_touch(arnie, touch_probe, axis, step):
+def retract_until_no_touch(arnie, touch_probe, axis, step, touch_function=None):
+	if touch_function == None:
+		touch_function = touch_probe.isTouched
+		
 	delta_coord = AxisToCoordinates(axis, step)
-	x, y, z = arnie.getPosition()
 	
 	if delta_coord != [0, 0, 0] and delta_coord != [None, None, None]:
-		while touch_probe.isTouched():
+		while touch_function():
 			arnie.move_delta(dx=delta_coord[0], dy=delta_coord[1], dz=delta_coord[2], speed_xy=1000)
 	else:
 		print ("Interrupted because wrong axis was provided.")
@@ -1350,7 +1406,7 @@ def retract_until_no_touch(arnie, touch_probe, axis, step):
 	x, y, z = arnie.getPosition()
 	return x, y, z
 	
-def ApproachUntilTouch(arnie, touch_probe, axis, step, expectation=-1, tolerance=-1):
+def ApproachUntilTouch(arnie, touch_probe, axis, step, expectation=-1, tolerance=-1, touch_function=None):
 	"""
 	Arnie will move along specified "axis" by "step"
 	Provide:
@@ -1360,11 +1416,13 @@ def ApproachUntilTouch(arnie, touch_probe, axis, step, expectation=-1, tolerance
 		step - distance to move at every step
 	"""
 	
+	if touch_function == None:
+		touch_function = touch_probe.isTouched
+	
 	delta_coord = AxisToCoordinates(axis, step)
-	x, y, z = arnie.getPosition()
 	
 	if delta_coord != [0, 0, 0] and delta_coord != [None, None, None]:
-		while not touch_probe.isTouched():
+		while not touch_function():
 			# ApproachUntilTouch forward by a tiny step	
 			arnie.move_delta(dx=delta_coord[0], dy=delta_coord[1], dz=delta_coord[2], speed_xy=1000)
 			if expectation != -1 and tolerance != -1:
