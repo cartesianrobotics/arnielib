@@ -570,10 +570,11 @@ def find_wall(robot, axis, direction, name="unknown", touch_function=None):
 		print("ERROR: invalid direction.")
 		print(direction)
 		return
-		
-	if robot.current_tool == None or robot.current_tool["type"] != "mobile_probe":
-		print("ERROR: No probe attached.")
-		return
+	
+	# TODO: This check had to be commented out because this function is used for stalagmite calibration too. Bring it back somehow?
+	#if robot.current_tool == None or robot.current_tool["type"] != "mobile_probe":
+	#	print("ERROR: No probe attached.")
+	#	return
 	
 	if axis == "Z": 
 		approach_step_1 = 45.0 # CONSTANT
@@ -763,33 +764,58 @@ def calibrate_tip(robot, x_n, y_n, touch_function, initial_height_mm):
 	robot.home("Z")
 	goto_slot_center(robot, x_n, y_n)
 	robot.move(z=slot["floor_z"] - (initial_height_mm + 10) * u_in_mm[2])
-	height = find_wall(robot, "Z", 1, "calibrate_mobile_probe_tip-height", touch_function)
+	height = find_wall(robot, "Z", 1, "calibrate_tip-height", touch_function)
 	
 	move_delta_mm(robot, dx=10 * u_in_mm[0])
 	robot.move(z=height + 5 * u_in_mm[2])
-	east = find_wall(robot, "X", -1, "calibrate_mobile_probe_tip-east", touch_function)
+	east = find_wall(robot, "X", -1, "calibrate_tip-east", touch_function)
 	robot.move(z=height - 5 * u_in_mm[2])
 	goto_slot_center(robot, x_n, y_n)
 	
 	move_delta_mm(robot, dx=-10 * u_in_mm[0])
 	robot.move(z=height + 5 * u_in_mm[2])
-	west = find_wall(robot, "X", 1, "calibrate_mobile_probe_tip-west", touch_function)
+	west = find_wall(robot, "X", 1, "calibrate_tip-west", touch_function)
 	robot.move(z=height - 5 * u_in_mm[2])
 	goto_slot_center(robot, x_n, y_n)
 	
 	move_delta_mm(robot, dy=10 * u_in_mm[1])
 	robot.move(z=height + 5 * u_in_mm[2])
-	south = find_wall(robot, "Y", -1, "calibrate_mobile_probe_tip-south", touch_function)
+	south = find_wall(robot, "Y", -1, "calibrate_tip-south", touch_function)
 	robot.move(z=height - 5 * u_in_mm[2])
 	goto_slot_center(robot, x_n, y_n)
 	
 	move_delta_mm(robot, dy=-10 * u_in_mm[1])
 	robot.move(z=height + 5 * u_in_mm[2])
-	north = find_wall(robot, "Y", 1, "calibrate_mobile_probe_tip-north", touch_function)
+	north = find_wall(robot, "Y", 1, "calibrate_tip-north", touch_function)
 	robot.move(z=height - 5 * u_in_mm[2])
 	goto_slot_center(robot, x_n, y_n)
 	
 	return [(east + west) / 2, (south + north) / 2, height]
+
+def calibrate_pipettor_tip(robot, x_n, y_n):
+	# x_n, y_n -- coordinates of the slot that contains the stalagmite.
+	stalagmite_height_mm = 130
+	
+	stat_probe = None
+	for device in robot.tool_devices:
+		if device.description["type"] == "stationary_probe":
+			stat_probe = device
+			break
+	
+	if stat_probe == None:
+		print("ERROR: No stationary probe is connected.")
+		return
+	
+	position = calibrate_tip(robot, x_n, y_n, stat_probe.isTouched, stalagmite_height_mm + 100)
+	
+	tool_i = find_tool_i_by_type(robot, "pipettor")
+	robot.tools[tool_i]["params"] = {"tip": position}
+	update_tools(robot)
+
+def get_tool(robot, type):
+	tool_i = find_tool_i_by_type(robot, type)
+	tool = robot.tools[tool_i]
+	robot.get_tool(tool["n_x"], tool["n_y"])
 
 def calibrate_mobile_probe_tip(robot, x_n, y_n):
 	# x_n, y_n -- coordinates of the slot that contains the stalagmite.
