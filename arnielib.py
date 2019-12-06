@@ -756,29 +756,13 @@ def calibrate_pipettor(robot, x_n, y_n):
 		
 	update_tools(robot)
 
-def calibrate_mobile_probe_tip(robot, x_n, y_n):
-	# x_n, y_n -- coordinates of the slot that contains the stalagmite.
-	stalagmite_height_mm = 130
+def calibrate_tip(robot, x_n, y_n, touch_function, initial_height_mm):
 	slot = robot.params["slots"][x_n][y_n]
 	u_in_mm = robot.params["units_in_mm"]
-	
-	stat_probe = None
-	for device in robot.tool_devices:
-		if device.description["type"] == "stationary_probe":
-			stat_probe = device
-			break
-	
-	if stat_probe == None:
-		print("ERROR: No stationary probe is connected.")
-		return
-	
-	mob_probe = robot.current_tool_device
-	def touch_function():
-		return stat_probe.isTouched() or mob_probe.isTouched()
-	
+
 	robot.home("Z")
 	goto_slot_center(robot, x_n, y_n)
-	robot.move(z=slot["floor_z"] - (stalagmite_height_mm + 10) * u_in_mm[2])
+	robot.move(z=slot["floor_z"] - (initial_height_mm + 10) * u_in_mm[2])
 	height = find_wall(robot, "Z", 1, "calibrate_mobile_probe_tip-height", touch_function)
 	
 	move_delta_mm(robot, dx=10 * u_in_mm[0])
@@ -805,8 +789,30 @@ def calibrate_mobile_probe_tip(robot, x_n, y_n):
 	robot.move(z=height - 5 * u_in_mm[2])
 	goto_slot_center(robot, x_n, y_n)
 	
+	return [(east + west) / 2, (south + north) / 2, height]
+
+def calibrate_mobile_probe_tip(robot, x_n, y_n):
+	# x_n, y_n -- coordinates of the slot that contains the stalagmite.
+	stalagmite_height_mm = 130
+	
+	stat_probe = None
+	for device in robot.tool_devices:
+		if device.description["type"] == "stationary_probe":
+			stat_probe = device
+			break
+	
+	if stat_probe == None:
+		print("ERROR: No stationary probe is connected.")
+		return
+	
+	mob_probe = robot.current_tool_device
+	def touch_function():
+		return stat_probe.isTouched() or mob_probe.isTouched()
+	
+	position = calibrate_tip(robot, x_n, y_n, touch_function, stalagmite_height_mm)
+	
 	tool_i = find_tool_i_by_type(robot, "mobile_probe")
-	robot.tools[tool_i]["params"] = {"tip": [(east + west) / 2, (south + north) / 2, height]}
+	robot.tools[tool_i]["params"] = {"tip": position}
 	update_tools(robot)
 	
 
