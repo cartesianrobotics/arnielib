@@ -125,6 +125,7 @@ class serial_device():
 		
 		self.eol=eol
 		self.recent_message = ""
+		self.description = {"class": serial_device, "message": "", "type": "", "mobile": False }
 
 		self.openSerialPort(port_name, baudrate, timeout)
 	
@@ -238,6 +239,10 @@ class serial_device():
 					self.recent_message = full_message
 					break
 
+class pipettor(serial_device):
+	def drop_tip(self):
+		return
+
 class mobile_touch_probe(serial_device):
 	def isTouched(self):
 		self.write('d')
@@ -264,6 +269,7 @@ class arnie(serial_device):
 		self.calibrated = False
 		self.speed = [speed_x, speed_y, speed_z]
 		self.tools = []
+		self.tool_devices = []
 		
 	def home(self, axes='ZXY'):
 		"""
@@ -535,6 +541,13 @@ class arnie(serial_device):
 			print("Repeated tool pickup failed after "+str(current_attempt)+" attempts")
 			attempt_successful = 0
 		return attempt_successful
+
+device_type_descriptions = [
+	{"class": arnie, "message": "Marlin", "type": "", "mobile": False}, 
+	{"class": stationary_touch_probe, "message": "stationary touch probe", "type": "stationary_probe", "mobile": False}, 
+	{"class": mobile_touch_probe, "message": "mobile touch probe", "type": "mobile_probe", "mobile": True},
+	{"class": pipettor, "message": "Servo", "type": "pipettor", "mobile": True},
+	]
 
 def move_delta_mm(robot, dx=0, dy=0, dz=0):
 	if abs(dx) > 0.001 and robot.params["units_in_mm"][0] == -1:
@@ -1343,42 +1356,48 @@ def load_tools(robot):
 def connect_tool(port_name, robot=None):
 	device = serial_device(port_name)
 	msg = device.recent_message
-	
-	if re.search(pattern="Marlin", string=msg):
-		device.__class__ = arnie
-		device.promote()
-		robot = device
 
-	if re.search(pattern="mobile touch probe", string=msg):
-		device.__class__ = mobile_touch_probe
+	recognized_desc = None
+	for desc in device_type_descriptions:
+		if re.search(pattern=desc["message"], string=msg):
+			recognized_desc = desc
+			break
 		
-	if re.search(pattern="stationary touch probe", string=msg):
-		device.__class__ = stationary_touch_probe
+	if recognized_desc == None:
+		print("ERROR: Device is unrecognized.")
+		return
 
+	device.__class__ = recognized_desc["class"]
+	device.description = recognized_desc
+	
+	if recognized_desc["class"] == arnie:
+		device.promote()
+	
 	if robot != None:
-		if device.__class__ == mobile_touch_probe:
+		if recognized_desc["mobile"]:
 			robot.current_tool_device = device
-		if device.__class__ == stationary_touch_probe:
+		else:
 			robot.slots.append(device)
 	
 	return device
 
+def find_tool_i_by_type(robot, type):
+	for tool_i in range(len(robot.tools)):
+		if robot.tools[tool_i]["type"] == type:
+			return tool_i
+	return -1
+
 def connect():
 	ports = serial_ports()
-
-	mtp = None
 	robot = None
-	stp = None
+	available_devices = []
 	
 	for port_name in ports:
 		device = connect_tool(port_name)
-		
 		if device.__class__ == arnie:
 			robot = device
-		if device.__class__ == mobile_touch_probe:
-			mtp = device
-		if device.__class__ == stationary_touch_probe:
-			stp = device
+		else: 
+			available_devices.append(device)
 
 	if robot == None:
 		print("ERROR: No robot detected.")
@@ -1391,28 +1410,28 @@ def connect():
 	
 	if os.path.exists("tools.json"):
 		load_tools(robot)
+	
+	robot.current_device = None
+	robot.current_device_tool = None
+	
+	for device in available_devices:
+		if device.description["mobile"]:
+			robot.current_tool_device = device
+			tool_i = find_tool_i_by_type(robot, device.description["type"])
+			if tool_i == -1:
+				robot.current_tool = deepcopy(default_tool)
+				robot.current_tool["type"] = device.description["type"]
+			else:
+				robot.current_tool = deepcopy(robot.tools[tool_i])
+		else:
+			# TODO
+			pass
+				
 
 	robots.append(robot)
 	print("Connected. Homing.")
 	time.sleep(1)
 	robot.home()
-	
-	robot.current_device = None
-	robot.current_device_tool = None
-	
-	if mtp != None:
-		robot.current_tool_device = mtp
-		robot.current_tool = deepcopy(default_tool)
-		robot.current_tool["type"] = "mobile_probe"
-
-		for saved_tool in robot.tools:
-			if saved_tool["type"] == "mobile_probe":
-				robot.current_tool = deepcopy(saved_tool)
-				
-	
-	if stp != None:
-		pass
-#		robot.slot_tools.append(stp)
 		
 	log("Start")
 	log(str(datetime.now()))
