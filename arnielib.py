@@ -243,7 +243,18 @@ class serial_device():
 
 class pipettor(serial_device):
 	def drop_tip(self):
-		return
+		self.write("$H")
+		self.readAll()
+		self.write("M3 S90")
+		self.readAll()
+		self.write("M5")
+		self.readAll()
+		self.write("G0 X-35")
+		self.readAll()
+		self.write("G0 X0")
+		self.readAll()
+		self.write("M3 S90")
+		self.readAll()
 
 class mobile_touch_probe(serial_device):
 	def isTouched(self):
