@@ -802,6 +802,46 @@ def calibrate_rectangle(robot, rect, safe_height, measure_height, name):
 	
 	return [north1, north2, east1, east2, south1, south2, west1, west2]
 
+def calibrate_tip_tray(robot, x_n, y_n):
+	slot = robot.params["slots"][x_n][y_n]
+	robot.home("Z")
+	goto_slot_lt(robot, x_n, y_n)
+	
+	floor = slot["floor_z"]
+	tray_safe_height = floor - 100 * robot.params["units_in_mm"][2]
+	tray_measure_height = floor - 70 * robot.params["units_in_mm"][2]
+	
+	north1, north2, east1, east2, south1, south2, west1, west2 = calibrate_rectangle(robot, robot.params["slots"][x_n][y_n], tray_safe_height, tray_measure_height, "calibrate_tip_tray-")
+	
+	# TODO: This bookkeeping has to happen after each tool calibration. Factor it out?	
+	tool = deepcopy(default_tool)
+	
+	tool["n_x"] = x_n
+	tool["n_y"] = y_n
+	tool["slot"] = deepcopy(slot)
+	tool["type"] = "tip_tray"
+	
+	tool["params"] = {
+		"north1": north1,
+		"north2": north2,
+		"south1": south1,
+		"south2": south2,
+		"east1": east1,
+		"east2": east2,
+		"west1": west1,
+		"west2": west2,
+		"width_n": 12,
+		"height_n": 8
+	}
+	
+	tool_i = find_tool_i_by_coord(robot, x_n, y_n)
+	if tool_i == -1:
+		robot.tools.append(tool)
+	else: 
+		robot.tools[tool_i] = tool
+	update_tools(robot)
+
+
 def calibrate_plate(robot, x_n, y_n):
 	n_columns = 12
 	n_rows = 8	
@@ -1391,7 +1431,7 @@ def connect_tool(port_name, robot=None):
 		if recognized_desc["mobile"]:
 			robot.current_tool_device = device
 		else:
-			robot.slots.append(device)
+			robot.tool_devices.append(device)
 	
 	return device
 
@@ -1438,9 +1478,7 @@ def connect():
 			else:
 				robot.current_tool = deepcopy(robot.tools[tool_i])
 		else:
-			# TODO
-			pass
-				
+			robot.tool_devices.append(device)	
 
 	robots.append(robot)
 	print("Connected. Homing.")
