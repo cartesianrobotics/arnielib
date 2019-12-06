@@ -1012,6 +1012,25 @@ def find_tool_i_by_coord(robot, x_n, y_n):
 			return tool_i
 	
 	return -1
+
+def calc_hole_position(rect, x_n, y_n, hole_x_n, hole_y_n, hole_width, hole_height):	
+	west1 = rect["west1"]
+	west2 = rect["west2"]
+	east1 = rect["east1"]
+	east2 = rect["east2"]
+	north1 = rect["north1"]
+	north2 = rect["north2"]
+	south1 = rect["south1"]
+	south2 = rect["south2"]
+	
+	# TODO: More precise positioning that takes skewness into account.
+	plate_center = [(west1 + east1 + west2 + east2) / 4, (north1 + south1 + north2 + south2) / 4]
+	first_hole = [plate_center[0] - hole_width * 11 / 2, plate_center[1] - hole_height * 7 / 2]
+
+	dest_x = first_hole[0] + hole_x_n * hole_width
+	dest_y = first_hole[1] + hole_y_n * hole_height
+	
+	return [dest_x, dest_y]
 	
 def goto_plate_hole(robot, x_n, y_n, hole_x_n, hole_y_n):
 	tool_i = find_tool_i_by_coord(robot, x_n, y_n)
@@ -1025,29 +1044,8 @@ def goto_plate_hole(robot, x_n, y_n, hole_x_n, hole_y_n):
 		print("ERROR: The tool in  slot (" + str(x_n) + ", " + str(y_n) + ") is not a plate.")
 		return
 	
-	west1 = tool["params"]["west1"]
-	west2 = tool["params"]["west2"]
-	east1 = tool["params"]["east1"]
-	east2 = tool["params"]["east2"]
-	north1 = tool["params"]["north1"]
-	north2 = tool["params"]["north2"]
-	south1 = tool["params"]["south1"]
-	south2 = tool["params"]["south2"]
-	
-	# TODO: More precise positioning that takes skewness into account.
-	width_u = robot.params["units_in_mm"][0] * tool["params"]["width_mm"]
-	height_u = robot.params["units_in_mm"][1] * tool["params"]["height_mm"]
-	plate_center = [(west1 + east1 + west2 + east2) / 4, (north1 + south1 + north2 + south2) / 4]
-	first_hole = [plate_center[0] - width_u / 2, plate_center[1] - height_u / 2]
-	
-	hole_width = width_u / (tool["params"]["width_n"] - 1)
-	hole_height = height_u / (tool["params"]["height_n"] - 1)
-	
-	dest_x = first_hole[0] + hole_x_n * hole_width
-	dest_y = first_hole[1] + hole_y_n * hole_height
+	dest_x, dest_y = calc_hole_position(tool["params"], x_n, y_n, hole_x_n, hole_y_n, 9 * robot.params["units_in_mm"][0], 9 * robot.params["units_in_mm"][1])
 	dest_z = tool["params"]["height"] - 10
-	
-	print(dest_x, dest_y, dest_z)
 	
 	robot.move(x=dest_x, y=dest_y, z=dest_z)
 
