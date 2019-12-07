@@ -243,9 +243,12 @@ class serial_device():
 					break
 
 class pipettor(serial_device):
-	def drop_tip(self):
+	def home(self):
 		self.write("$H")
 		self.readAll()
+	
+	def drop_tip(self):
+		self.home()
 		self.write("M3 S90")
 		self.readAll()
 		self.write("M5")
@@ -503,6 +506,10 @@ class arnie(serial_device):
 		"""
 		if self.current_tool == None:
 			print("ERROR: Trying to return tool, but no tool is connected.")
+		
+		if self.current_tool["type"] == "pipettor":
+			self.current_tool_device.home()
+			time.sleep(5)
 		
 		dest = self.current_tool["position"]
 		self.home("Z")
@@ -826,6 +833,10 @@ def calibrate_pipettor_tip(robot, x_n, y_n):
 
 def get_tool(robot, type):
 	tool_i = find_tool_i_by_type(robot, type)
+	if tool_i == -1:
+		print("ERROR: No such tool exists: " + type + ".")
+		return
+		
 	tool = robot.tools[tool_i]
 	robot.get_tool(tool["n_x"], tool["n_y"])
 
