@@ -11,6 +11,7 @@ TODO:
 11. Stalactite screw length calibration.
 12. Make things more mathematically reasonable.
 13. Add checks like only calibrate if the stalactite is connected.
+14. Tip means both the tip of a tool and a plastic pipettor tip. Rename.
 """
 	
 import serial
@@ -596,7 +597,7 @@ def find_wall(robot, axis, direction, name="unknown", touch_function=None):
 	
 	ApproachUntilTouch(robot, robot.current_tool_device, axis, direction * approach_step_1, touch_function=touch_function) # CONSTANT
 	retract_until_no_touch(robot, robot.current_tool_device, axis, -direction * approach_step_2, touch_function=touch_function) # CONSTANT
-	wall_coord = ApproachUntilTouch(robot, robot.current_tool_device, axis, direction * 0.5, touch_function=touch_function) # CONSTANT
+	wall_coord = ApproachUntilTouch(robot, robot.current_tool_device, axis, direction * 0.5, touch_function=touch_function, speed=100) # CONSTANT
 	result = wall_coord[axis_index(axis)]
 	step_back = [0, 0, 0]
 	if axis == "Z": 
@@ -1043,7 +1044,30 @@ def calc_hole_position(rect, x_n, y_n, hole_x_n, hole_y_n, hole_width, hole_heig
 	
 	return [dest_x, dest_y]
 
-def goto_tray_tip(robot, x_n, y_n, hole_x_n, hole_y_n):
+def test_tip_tray_calibration(robot, x_n, y_n):
+	tool_i = find_tool_i_by_coord(robot, x_n, y_n)
+	
+	if robot.current_tool["type"] != "pipettor":
+		print("ERROR: No pipettor is attached.")
+		return
+	
+	if tool_i == -1:
+		print("ERROR: No tool in slot (" + str(x_n) + ", " + str(y_n) + ").")
+		return
+	
+	tool = robot.tools[tool_i]
+	if tool["type"] != "tip_tray":
+		print("ERROR: The tool in slot (" + str(x_n) + ", " + str(y_n) + ") is not a tip tray.")
+		return
+	
+	u_in_mm = robot.params["units_in_mm"]
+	for column_i in range(tool["params"]["width_n"]):
+		for row_i in range(tool["params"]["height_n"]):
+			pickup_tip(robot, x_n, y_n, column_i, row_i)
+			robot.move_delta(dz = -50 * u_in_mm[2])
+			robot.current_tool_device.drop_tip()
+
+def pickup_tip(robot, x_n, y_n, hole_x_n, hole_y_n):
 	slot = robot.params["slots"][x_n][y_n]
 	u_in_mm = robot.params["units_in_mm"]
 	tool_i = find_tool_i_by_coord(robot, x_n, y_n)
@@ -1058,7 +1082,10 @@ def goto_tray_tip(robot, x_n, y_n, hole_x_n, hole_y_n):
 		return
 	
 	stal_dest_x, stal_dest_y = calc_hole_position(tool["params"], x_n, y_n, hole_x_n, hole_y_n, 9 * u_in_mm[0], 9 * u_in_mm[1])
-	stal_dest_z = slot["floor_z"] - u_in_mm[2] * 90
+	approach_height = 95
+	dest_height = 85
+	stal_appr_z = slot["floor_z"] - u_in_mm[2] * approach_height
+	stal_dest_z = slot["floor_z"] - u_in_mm[2] * dest_height
 	
 	pip_tip = robot.current_tool["params"]["tip"]
 	stal_i = find_tool_i_by_type(robot, "mobile_probe")
@@ -1066,10 +1093,12 @@ def goto_tray_tip(robot, x_n, y_n, hole_x_n, hole_y_n):
 	
 	dest_x = stal_dest_x - stal_tip[0] + pip_tip[0]
 	dest_y = stal_dest_y - stal_tip[1] + pip_tip[1]
+	appr_z = stal_appr_z - stal_tip[2] + pip_tip[2]
 	dest_z = stal_dest_z - stal_tip[2] + pip_tip[2]
 	
 	robot.move(x=dest_x, y=dest_y)
-	robot.move(z=dest_z)
+	robot.move(z=appr_z)
+	robot.move(z=dest_z, speed_z = 1000)
 
 def goto_plate_hole(robot, x_n, y_n, hole_x_n, hole_y_n):
 	tool_i = find_tool_i_by_coord(robot, x_n, y_n)
@@ -1475,7 +1504,7 @@ def retract_until_no_touch(arnie, touch_probe, axis, step, touch_function=None):
 	x, y, z = arnie.getPosition()
 	return x, y, z
 	
-def ApproachUntilTouch(arnie, touch_probe, axis, step, expectation=-1, tolerance=-1, touch_function=None):
+def ApproachUntilTouch(arnie, touch_probe, axis, step, expectation=-1, tolerance=-1, touch_function=None, speed=None):
 	"""
 	Arnie will move along specified "axis" by "step"
 	Provide:
@@ -1490,10 +1519,14 @@ def ApproachUntilTouch(arnie, touch_probe, axis, step, expectation=-1, tolerance
 	
 	delta_coord = AxisToCoordinates(axis, step)
 	
+	speed_xy = 1000
+	if speed != None:
+		speed_xy = speed
+	
 	if delta_coord != [0, 0, 0] and delta_coord != [None, None, None]:
 		while not touch_function():
 			# ApproachUntilTouch forward by a tiny step	
-			arnie.move_delta(dx=delta_coord[0], dy=delta_coord[1], dz=delta_coord[2], speed_xy=1000)
+			arnie.move_delta(dx=delta_coord[0], dy=delta_coord[1], dz=delta_coord[2], speed_xy=speed_xy)
 			if expectation != -1 and tolerance != -1:
 				position = arnie.getPosition()
 				if abs(position[axis_index(axis)] - expectation) > tolerance:
