@@ -1100,6 +1100,99 @@ def pickup_tip(robot, x_n, y_n, hole_x_n, hole_y_n):
 	robot.move(z=appr_z)
 	robot.move(z=dest_z, speed_z = 1000)
 
+def get_liquid(robot, x_n, y_n, hole_x_n, hole_y_n):
+	pipettor = robot.current_tool_device
+	pipettor.write("$H")
+	pipettor.readAll()
+	pipettor.write("G0 X-30")
+	pipettor.readAll()
+	time.sleep(10)
+
+	slot = robot.params["slots"][x_n][y_n]
+	u_in_mm = robot.params["units_in_mm"]
+	tool_i = find_tool_i_by_coord(robot, x_n, y_n)
+	if tool_i == -1:
+		print("ERROR: No tool in slot (" + str(x_n) + ", " + str(y_n) + ").")
+		return
+		
+	tool = robot.tools[tool_i]
+	
+	if tool["type"] != "plate":
+		print("ERROR: The tool in  slot (" + str(x_n) + ", " + str(y_n) + ") is not a plate.")
+		return
+	
+	stal_dest_x, stal_dest_y = calc_hole_position(tool["params"], x_n, y_n, hole_x_n, hole_y_n, 9 * u_in_mm[0], 9 * u_in_mm[1])
+	appr_height = 20
+	dest_height = 10
+	tip_height_mm = 75
+	stal_appr_z = slot["floor_z"] - u_in_mm[2] * (appr_height + tip_height_mm)
+	stal_dest_z = slot["floor_z"] - u_in_mm[2] * (dest_height + tip_height_mm)
+	
+	pip_tip = robot.current_tool["params"]["tip"]
+	stal_i = find_tool_i_by_type(robot, "mobile_probe")
+	stal_tip = robot.tools[stal_i]["params"]["tip"]
+	
+	dest_x = stal_dest_x - stal_tip[0] + pip_tip[0]
+	dest_y = stal_dest_y - stal_tip[1] + pip_tip[1]
+	appr_z = stal_appr_z - stal_tip[2] + pip_tip[2] 
+	dest_z = stal_dest_z - stal_tip[2] + pip_tip[2]
+	
+	robot.move(x=dest_x, y=dest_y)
+	robot.move(z=appr_z)
+	robot.move(z=dest_z, speed_z = 1000)
+
+	pipettor.write("G0 X0")
+	pipettor.readAll()
+	time.sleep(5)
+	
+	robot.move_delta(dz = -50 * u_in_mm[2])
+
+def drop_liquid(robot, x_n, y_n, hole_x_n, hole_y_n):
+	pipettor = robot.current_tool_device
+	pipettor.write("$H")
+	pipettor.readAll()
+	time.sleep(10)
+
+	slot = robot.params["slots"][x_n][y_n]
+	u_in_mm = robot.params["units_in_mm"]
+	tool_i = find_tool_i_by_coord(robot, x_n, y_n)
+	if tool_i == -1:
+		print("ERROR: No tool in slot (" + str(x_n) + ", " + str(y_n) + ").")
+		return
+		
+	tool = robot.tools[tool_i]
+	
+	if tool["type"] != "plate":
+		print("ERROR: The tool in  slot (" + str(x_n) + ", " + str(y_n) + ") is not a plate.")
+		return
+	
+	stal_dest_x, stal_dest_y = calc_hole_position(tool["params"], x_n, y_n, hole_x_n, hole_y_n, 9 * u_in_mm[0], 9 * u_in_mm[1])
+	appr_height = 20
+	dest_height = 10
+	tip_height_mm = 75
+	stal_appr_z = slot["floor_z"] - u_in_mm[2] * (appr_height + tip_height_mm)
+	stal_dest_z = slot["floor_z"] - u_in_mm[2] * (dest_height + tip_height_mm)
+	
+	pip_tip = robot.current_tool["params"]["tip"]
+	stal_i = find_tool_i_by_type(robot, "mobile_probe")
+	stal_tip = robot.tools[stal_i]["params"]["tip"]
+	
+	dest_x = stal_dest_x - stal_tip[0] + pip_tip[0]
+	dest_y = stal_dest_y - stal_tip[1] + pip_tip[1]
+	appr_z = stal_appr_z - stal_tip[2] + pip_tip[2] 
+	dest_z = stal_dest_z - stal_tip[2] + pip_tip[2]
+	
+	robot.move(x=dest_x, y=dest_y)
+	robot.move(z=appr_z)
+	robot.move(z=dest_z, speed_z = 1000)
+
+	pipettor.write("G0 X-30")
+	pipettor.readAll()
+	time.sleep(5)
+	
+	robot.move_delta(dz = -50 * u_in_mm[2])
+
+
 def goto_plate_hole(robot, x_n, y_n, hole_x_n, hole_y_n):
 	tool_i = find_tool_i_by_coord(robot, x_n, y_n)
 	if tool_i == -1:
