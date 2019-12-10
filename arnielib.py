@@ -714,7 +714,7 @@ def calibrate_mobile_probe_rack(robot, x_n, y_n):
 	
 	tool_exists = False
 	for tool_i in range(len(robot.tools)):
-		tool = tobot.tools[tool_i]
+		tool = robot.tools[tool_i]
 		if tool["n_x"] == x_n and tool["n_y"] == y_n:
 			robot.tools[tool_i] = robot.current_tool
 			tool_exists = True
@@ -807,9 +807,12 @@ def calibrate_tip(robot, x_n, y_n, touch_function, initial_height_mm):
 	robot.move(z=height + 5 * u_in_mm[2])
 	north = find_wall(robot, "Y", 1, "calibrate_tip-north", touch_function)
 	robot.move(z=height - 5 * u_in_mm[2])
-	goto_slot_center(robot, x_n, y_n)
 	
-	return [(east + west) / 2, (south + north) / 2, height]
+	result = [(east + west) / 2, (south + north) / 2, height]
+	
+	robot.move(x = result[0], y = result[1])
+	
+	return result
 
 def calibrate_pipettor_tip(robot, x_n, y_n):
 	# x_n, y_n -- coordinates of the slot that contains the stalagmite.
@@ -859,11 +862,11 @@ def calibrate_mobile_probe_tip(robot, x_n, y_n):
 		return stat_probe.isTouched() or mob_probe.isTouched()
 	
 	position = calibrate_tip(robot, x_n, y_n, touch_function, stalagmite_height_mm)
+	robot.move(z=position[2])
 	
 	tool_i = find_tool_i_by_type(robot, "mobile_probe")
 	robot.tools[tool_i]["params"] = {"tip": position}
 	update_tools(robot)
-	
 
 def calibrate_rectangle(robot, rect, safe_height, measure_height, name):
 	lt = rect["LT"]
@@ -921,6 +924,10 @@ def calibrate_tip_tray(robot, x_n, y_n):
 	tray_measure_height = floor - 70 * robot.params["units_in_mm"][2]
 	
 	north1, north2, east1, east2, south1, south2, west1, west2 = calibrate_rectangle(robot, robot.params["slots"][x_n][y_n], tray_safe_height, tray_measure_height, "calibrate_tip_tray-")
+	
+	center = [(east1 + east2 + west1 + west2) / 4, (north1 + north2 + south1 + south2) / 4]
+	robot.move(z=tray_safe_height)
+	robot.move(x=center[0], y=center[1])
 	
 	# TODO: This bookkeeping has to happen after each tool calibration. Factor it out?	
 	tool = deepcopy(default_tool)
@@ -1072,11 +1079,16 @@ def test_tip_tray_calibration(robot, x_n, y_n):
 		return
 	
 	u_in_mm = robot.params["units_in_mm"]
-	for column_i in range(tool["params"]["width_n"]):
-		for row_i in range(tool["params"]["height_n"]):
+	
+	columns = [0, 11] # range(tool["params"]["width_n"])
+	rows = [0, 7] # range(tool["params"]["height_n"])
+	
+	for column_i in columns:
+		for row_i in rows:
 			pickup_tip(robot, x_n, y_n, column_i, row_i)
 			robot.move_delta(dz = -50 * u_in_mm[2])
 			robot.current_tool_device.drop_tip()
+			time.sleep(7)
 
 def pickup_tip(robot, x_n, y_n, hole_x_n, hole_y_n):
 	slot = robot.params["slots"][x_n][y_n]
@@ -1696,6 +1708,9 @@ def connect_tool(port_name, robot=None):
 			robot.current_tool_device = device
 		else:
 			robot.tool_devices.append(device)
+	
+	if device.__class__ == pipettor:
+		device.home()
 	
 	return device
 
