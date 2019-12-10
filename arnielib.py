@@ -1355,7 +1355,9 @@ def goto_slot_rb(robot, n_x, n_y):
 	slot = robot.params["slots"][n_x][n_y]
 	robot.move(x = slot['RB'][0], y = slot['RB'][1])
 	
-def ziggurat_calibration(robot):
+def ziggurat_calibration(robot, x_n, y_n):
+	# x_n, y_n -- ziggurat coordinates.
+
 	if not robot.calibrated:
 		print("ERROR: The robot is not calibrated. Use calibrate(robot) first.")
 		return
@@ -1374,8 +1376,10 @@ def ziggurat_calibration(robot):
 	dys = []
 	dzs = []
 	
+	robot.home("Z")
+
+	goto_slot_lt(robot, x_n, y_n)	
 	robot.move(z=5400)
-	goto_slot_lt(robot, 0, 3)
 	robot.move(z=safe_height)
 	robot.move_delta(dy=robot.params['slot_height'] / 2)
 	
@@ -1394,7 +1398,7 @@ def ziggurat_calibration(robot):
 		old_z = new_z
 	
 	robot.move(z=5400)
-	goto_slot_lt(robot, 0, 3)
+	goto_slot_lt(robot, x_n, y_n)
 	robot.move(z=safe_height)
 	robot.move_delta(dx=robot.params['slot_width'] / 2)
 	
@@ -1417,6 +1421,8 @@ def ziggurat_calibration(robot):
 	print(dxs)
 	print(dys)
 	print(dzs)
+	
+	update_floor(robot)
 
 def calibrate(robot):
 	if robot.current_tool["type"] != "stationary_probe": 
