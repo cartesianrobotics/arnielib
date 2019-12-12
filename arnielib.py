@@ -998,9 +998,9 @@ def calibrate_tip_tray(robot, x_n, y_n):
 		robot.tools[tool_i] = tool
 	update_tools(robot)
 
+plate_types = ["96_well", "eppendorf", "50_ml"]
 
 def calibrate_plate(robot, x_n, y_n, plate_type):
-	plate_types = ["96_well", "eppendorf"]
 	if plate_type not in plate_types:
 		print("ERROR: unknown plate type: " + plate_type + ".")
 		print("Known plate types:")
@@ -1013,19 +1013,21 @@ def calibrate_plate(robot, x_n, y_n, plate_type):
 	
 	robot.home("Z")
 	goto_slot_lt(robot, x_n, y_n)
-	robot.move(z=5800)
 	
-	screw_height = find_wall(robot, "Z", 1, "calibrate_plate-screw")
 	if plate_type == "96_well":
-		plate_level = screw_height - 50
+		plate_level = slot["floor_z"] - u_mm[2] * 14
 		n_columns = 12
 		n_rows = 8	
 	elif plate_type == "eppendorf":
 		plate_level = slot["floor_z"] - u_mm[2] * 23
 		n_columns = 8
 		n_rows = 4
+	elif plate_type == "50_ml":
+		plate_level = slot["floor_z"] - u_mm[2] * 91
+		n_columns = 3
+		n_rows = 2
 		
-	plate_safe_height = slot["floor_z"] -  30 * u_mm[2]
+	plate_safe_height = plate_level - 30 * u_mm[2]
 	
 	north1, north2, east1, east2, south1, south2, west1, west2 = calibrate_rectangle(robot, robot.params["slots"][x_n][y_n], plate_safe_height, plate_level, "calibrate_plate-")
 
@@ -1117,9 +1119,13 @@ def calc_hole_position(rect, x_n, y_n, hole_x_n, hole_y_n, u_mm, plate_type="96_
 		well_height = 9 * u_mm[1]
 		first_hole = [plate_center[0] - well_width * 11 / 2, plate_center[1] - well_height * 7 / 2]
 	elif plate_type == "eppendorf":
-		first_hole = [plate_center[0] - 59.5 * u_mm[0], plate_center[1] - 28 * u_mm[1]]
 		well_width = 17 * u_mm[0]
 		well_height = 23 * u_mm[1]
+		first_hole = [plate_center[0] - 59.5 * u_mm[0], plate_center[1] - 28 * u_mm[1]]
+	elif plate_type == "50_ml":
+		well_width = 50 * u_mm[0]
+		well_height = 50 * u_mm[1]
+		first_hole = [plate_center[0] - well_width, plate_center[1] - well_height * 1 / 2]
 	else: 
 		print("ERROR: Unknown plate type:" + str(plate_type) + ".")
 
