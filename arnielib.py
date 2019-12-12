@@ -11,6 +11,7 @@ TODO:
 12. Make things more mathematically reasonable.
 13. Add checks like only calibrate if the stalactite is connected.
 14. Tip means both the tip of a tool and a plastic pipettor tip. Rename.
+15. Make a command for moving or removing tools. 
 """
 	
 import serial
@@ -998,20 +999,35 @@ def calibrate_tip_tray(robot, x_n, y_n):
 	update_tools(robot)
 
 
-def calibrate_plate(robot, x_n, y_n):
-	n_columns = 12
-	n_rows = 8	
-	
+def calibrate_plate(robot, x_n, y_n, plate_type):
+	plate_types = ["96_well", "eppendorf"]
+	if plate_type not in plate_types:
+		print("ERROR: unknown plate type: " + plate_type + ".")
+		print("Known plate types:")
+		print(plate_types)
+		return
+
 	slot = robot.params["slots"][x_n][y_n]
 	
-	#robot.move(z=4500)
+	u_mm = robot.params["units_in_mm"]
+	
 	robot.home("Z")
 	goto_slot_lt(robot, x_n, y_n)
 	robot.move(z=5800)
-	plate_level = find_wall(robot, "Z", 1, "calibrate_plate-screw")
-	plate_safe_height = plate_level -  20 * robot.params["units_in_mm"][2]
 	
-	north1, north2, east1, east2, south1, south2, west1, west2 = calibrate_rectangle(robot, robot.params["slots"][x_n][y_n], plate_safe_height, plate_level - 50, "calibrate_plate-")
+	screw_height = find_wall(robot, "Z", 1, "calibrate_plate-screw")
+	if plate_type == "96_well":
+		plate_level = screw_height - 50
+		n_columns = 12
+		n_rows = 8	
+	elif plate_type == "eppendorf":
+		plate_level = slot["floor_z"] - u_mm[2] * 23
+		n_columns = 8
+		n_rows = 4
+		
+	plate_safe_height = slot["floor_z"] -  30 * u_mm[2]
+	
+	north1, north2, east1, east2, south1, south2, west1, west2 = calibrate_rectangle(robot, robot.params["slots"][x_n][y_n], plate_safe_height, plate_level, "calibrate_plate-")
 
 	plate_center = [(west1 + east1 + west2 + east2) / 4, (north1 + south1 + north2 + south2) / 4]
 
@@ -1040,10 +1056,9 @@ def calibrate_plate(robot, x_n, y_n):
 		"west1": west1,
 		"west2": west2,
 		"height": plate_height,
-		"width_mm": 99, # First hole center to last hole center
-		"height_mm": 63, # First hole center to last hole center
 		"width_n": n_columns,
-		"height_n": n_rows
+		"height_n": n_rows,
+		"plate_type": plate_type
 	}
 	
 	tool_exists = False
@@ -1084,7 +1099,7 @@ def find_tool_i_by_coord(robot, x_n, y_n):
 	
 	return -1
 
-def calc_hole_position(rect, x_n, y_n, hole_x_n, hole_y_n, hole_width, hole_height):	
+def calc_hole_position(rect, x_n, y_n, hole_x_n, hole_y_n, u_mm, plate_type="96_well"):
 	west1 = rect["west1"]
 	west2 = rect["west2"]
 	east1 = rect["east1"]
@@ -1096,10 +1111,20 @@ def calc_hole_position(rect, x_n, y_n, hole_x_n, hole_y_n, hole_width, hole_heig
 	
 	# TODO: More precise positioning that takes skewness into account.
 	plate_center = [(west1 + east1 + west2 + east2) / 4, (north1 + south1 + north2 + south2) / 4]
-	first_hole = [plate_center[0] - hole_width * 11 / 2, plate_center[1] - hole_height * 7 / 2]
+	
+	if plate_type == "96_well":
+		well_width = 9 * u_mm[0]
+		well_height = 9 * u_mm[1]
+		first_hole = [plate_center[0] - well_width * 11 / 2, plate_center[1] - well_height * 7 / 2]
+	elif plate_type == "eppendorf":
+		first_hole = [plate_center[0] - 59.5 * u_mm[0], plate_center[1] - 28 * u_mm[1]]
+		well_width = 17 * u_mm[0]
+		well_height = 23 * u_mm[1]
+	else: 
+		print("ERROR: Unknown plate type:" + str(plate_type) + ".")
 
-	dest_x = first_hole[0] + hole_x_n * hole_width
-	dest_y = first_hole[1] + hole_y_n * hole_height
+	dest_x = first_hole[0] + hole_x_n * well_width
+	dest_y = first_hole[1] + hole_y_n * well_height
 	
 	return [dest_x, dest_y]
 
@@ -1204,7 +1229,6 @@ def approach_well(robot, x_n, y_n, hole_x_n, hole_y_n):
 	dest_y = stal_dest_y - stal_tip[1] + pip_tip[1]
 	dest_z = stal_dest_z - stal_tip[2] + pip_tip[2]
 
-	
 	robot.move(x=dest_x, y=dest_y)
 	robot.move(z=dest_z)
 
@@ -1268,7 +1292,7 @@ def drop_liquid(robot, x_n, y_n, hole_x_n, hole_y_n):
 	
 	robot.move_delta(dz = -50 * u_in_mm[2])
 
-
+# Makes the stalactite go to a certain well in a plate.
 def goto_plate_hole(robot, x_n, y_n, hole_x_n, hole_y_n):
 	tool_i = find_tool_i_by_coord(robot, x_n, y_n)
 	if tool_i == -1:
@@ -1280,12 +1304,17 @@ def goto_plate_hole(robot, x_n, y_n, hole_x_n, hole_y_n):
 	if tool["type"] != "plate":
 		print("ERROR: The tool in  slot (" + str(x_n) + ", " + str(y_n) + ") is not a plate.")
 		return
+		
+	u_mm = robot.params["units_in_mm"]
 	
-	dest_x, dest_y = calc_hole_position(tool["params"], x_n, y_n, hole_x_n, hole_y_n, 9 * robot.params["units_in_mm"][0], 9 * robot.params["units_in_mm"][1])
-	dest_z = tool["params"]["height"] - 10
+	plate_type = tool["params"]["plate_type"]
+	
+	dest_x, dest_y = calc_hole_position(tool["params"], x_n, y_n, hole_x_n, hole_y_n, u_mm, plate_type)
+	dest_z = tool["params"]["height"] - 1 * u_mm[2]
 	
 	robot.move(x=dest_x, y=dest_y, z=dest_z)
 
+# Makes the stalactite visit the center of every well of a plate. 
 def check_plate_calibration(robot, x_n, y_n):
 	tool_i = find_tool_i_by_coord(robot, x_n, y_n)
 	if tool_i == -1:
