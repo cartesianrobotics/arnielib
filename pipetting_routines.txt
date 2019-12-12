@@ -1,7 +1,7 @@
 Pipetting routines
 
 
-One can uptake or release liquid.
+One can uptake or release liquid. One can also mix liquid with pipetting.
 
 
 Uptaking liquid
@@ -71,4 +71,19 @@ C. Fill several tubes with the same liquid
   At each step, check if volume to pipette is higher than actual amount in the tip; if higher; move to liquid uptake step.
   
 
-  
+Mixing liquid
+-------------
+
+A. Pipetting up and down
+  1. Move tip into a tube, touching the liquid
+    - height should not be too shallow, or you will uptake air
+    - height should not be too deep, or you will displace liquid with the tip out of the tube
+  2. Uptake liquid, moving tip down simultaneously
+  3. Delay
+  4. Release liquid, moving tip up simultaneously
+  5. Delay
+  ... Repeat N times
+  6. Move tip out of the liquid, but still inside the tube
+  7. Move plunger all the way down
+  8. Delay
+  9. Touch the wall to remove drop.
