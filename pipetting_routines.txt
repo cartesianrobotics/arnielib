@@ -1,0 +1,74 @@
+Pipetting routines
+
+
+One can uptake or release liquid.
+
+
+Uptaking liquid
+---------------
+
+A. Take x volume of a liquid from a tube with a lot of this liquid
+  1. Move plunger down equivalent with x volume
+  2. Lower tip into liquid
+    - height should not be too shallow, or you will uptake air
+    - height should not be too deep, or you will displace liquid with the tip out of the tube
+  3. Move plunger up with certain speed
+    Optionally, lower the tip as you are uptaking liquid
+  4. Delay to wait for viscous liquid to catch up
+  5. Move tip up from the liquid
+  
+B. Drain full tube - removes all liquid from the tube
+  1. Move plunger down equivalent with x volume
+  2. Lower tip into liquid
+    - height should not be too shallow, or you will uptake air
+    - height should not be too deep, or you will displace liquid with the tip out of the tube 
+  3. Move plunger up, simultaneously lower tip
+  4. reach to the bottom of the tube with the tip before moving plunger all the way up
+  5. while on the bottom, move plunger all the way up
+  6. lift tip 0.5mm up, wait for all liquid to get sucked in
+  7. Remove tip from the empty tube
+  
+C. Drain tube without worrying about displacing liquid
+  1. Move plunger down equivalent with x volume
+  2. Lower tip all the way to the bottom
+  3. Move plunger all the way up
+  4. Delay for liquid to get sucked in
+  5. Lift 0.5 mm up
+  6. Delay for liquid to get sucked in
+  7. Move tip up from the empty tube
+  
+  
+Releasing liquid
+----------------
+
+A. Put liquid into a tube, emptying tip
+  1. Move tip inside the tube, 1/4th of all height; tip does not touch liquid
+  2. Move plunger all the way down
+  3. Delay
+  4. Touch tube side with the tip (get rid of the liquid drop)
+  4. Move tip out of the tube
+  
+B. Pipette liquid into another liquid, wash tip
+  1. Move tip inside the tube, until touches liquid
+  2. Move plunger down according to the amount of liquid in the tip, but not more
+  3. Move plunger up while tip is still in the liquid
+  4. Move plunger down
+  5. Delay
+  5. Repeat N times
+  6. Move tip out of the liquid, but it should still be inside the tube
+  7. Move plunger all the way down
+  8. Delay
+  9. Move tip out of the tube
+  
+C. Fill several tubes with the same liquid
+  For example, filling 10 tubes with 100 uL of water each; 
+  or filling 10 tubes with 1000 uL of water total, but different volume for each tube
+  1. Move tip into tube 1, not touching anything
+  2. Move plunger down for volume 1
+  3. Move tip out of tube 1 into tube 2
+  4. Move plunger down for volume 2
+  ...
+  At each step, check if volume to pipette is higher than actual amount in the tip; if higher; move to liquid uptake step.
+  
+
+  
