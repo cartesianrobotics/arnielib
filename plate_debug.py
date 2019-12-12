@@ -3,6 +3,7 @@ from os.path import isfile, join
 from json import loads
 
 def print_tool_params(tool_type):
+	result = []
 	for file_name in listdir():
 		if  not isfile(file_name):
 			continue
@@ -18,6 +19,9 @@ def print_tool_params(tool_type):
 		for tool in tools:
 			if tool["type"] == tool_type:
 				print(tool["params"])
+				result.append(tool["params"])
+				
+	return result
 				
 def print_floor_params(param_name):
 	for file_name in listdir():

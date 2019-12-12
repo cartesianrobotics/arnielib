@@ -6,7 +6,6 @@ TODO:
 4. Make a function for swapping tools. 
 7. Make better serialization.
 8. Turn on the probe when connecting.
-9. Automatic unstucking for the stalactite.
 10. Manual probe connection.
 11. Stalactite screw length calibration.
 12. Make things more mathematically reasonable.
@@ -600,11 +599,17 @@ def find_wall(robot, axis, direction, name="unknown", touch_function=None):
 		approach_step_2 = 5.0
 	else:
 		approach_step_1 = 10.0 # CONSTANT
-		approach_step_2 = 3.0
+		approach_step_2 = 1.0
 	
-	ApproachUntilTouch(robot, robot.current_tool_device, axis, direction * approach_step_1, touch_function=touch_function) # CONSTANT
-	retract_until_no_touch(robot, robot.current_tool_device, axis, -direction * approach_step_2, touch_function=touch_function) # CONSTANT
-	wall_coord = ApproachUntilTouch(robot, robot.current_tool_device, axis, direction * 0.5, touch_function=touch_function, speed=100) # CONSTANT
+	# TODO: This is terrible. Sort it out. 
+	if robot.current_tool_device != None:
+		probe = robot.current_tool_device
+	else:
+		probe = None
+		
+	ApproachUntilTouch(robot, probe, axis, direction * approach_step_1, touch_function=touch_function) # CONSTANT
+	retract_until_no_touch(robot, probe, axis, -direction * approach_step_2, touch_function=touch_function) # CONSTANT
+	wall_coord = ApproachUntilTouch(robot, probe, axis, direction * 0.1, touch_function=touch_function, speed=100) # CONSTANT
 	result = wall_coord[axis_index(axis)]
 	step_back = [0, 0, 0]
 	if axis == "Z": 
@@ -697,6 +702,27 @@ def touch_left_top(robot, n_x, n_y):
 	find_wall(robot, "Z", 1, "left_top_screw_" + str(n_x) + "_" + str(n_y))
 	robot.move(z=safe_height)
 
+# This function is pretty janky. It measures the stalactite rack from the inside and the outside.
+def test_stalactite(robot, x_n, y_n):
+	floor_z = robot.params["slots"][x_n][y_n]["floor_z"]
+	floor_to_circle_rack_height = 105
+	center_z = floor_z - (floor_to_circle_rack_height - 3) * robot.params["units_in_mm"][2]
+	
+	tool_i = find_tool_i_by_type(robot, "mobile_probe")
+	
+	robot.move(z = center_z - 200)
+	
+	calibrate_mobile_probe_rack(robot, x_n, y_n)
+	
+	robot.move(z = center_z - 200)
+	
+	outer = calibrate_circle_outer(robot, x_n, y_n, center_z)
+	inner = robot.tools[tool_i]["position"]
+	
+	print(inner)
+	print(outer)
+	print([inner[0] - outer[0], inner[1] - outer[1]])
+
 def calibrate_mobile_probe_rack(robot, x_n, y_n):
 	center_xy = calc_slot_center(robot, x_n, y_n)
 	floor_to_circle_rack_height = 105
@@ -776,12 +802,15 @@ def calibrate_pipettor(robot, x_n, y_n):
 		
 	update_tools(robot)
 
-def calibrate_tip(robot, x_n, y_n, touch_function, initial_height_mm):
+def calibrate_tip(robot, x_n, y_n, touch_function, initial_height_mm, initial_point=None):
+	if initial_point == None:
+		initial_point = calc_slot_center(robot, x_n, y_n)
+		
 	slot = robot.params["slots"][x_n][y_n]
 	u_in_mm = robot.params["units_in_mm"]
 
 	robot.home("Z")
-	goto_slot_center(robot, x_n, y_n)
+	robot.move(x=initial_point[0], y=initial_point[1])
 	robot.move(z=slot["floor_z"] - (initial_height_mm + 10) * u_in_mm[2])
 	height = find_wall(robot, "Z", 1, "calibrate_tip-height", touch_function)
 	
@@ -789,19 +818,19 @@ def calibrate_tip(robot, x_n, y_n, touch_function, initial_height_mm):
 	robot.move(z=height + 5 * u_in_mm[2])
 	east = find_wall(robot, "X", -1, "calibrate_tip-east", touch_function)
 	robot.move(z=height - 5 * u_in_mm[2])
-	goto_slot_center(robot, x_n, y_n)
+	robot.move(x=initial_point[0], y=initial_point[1])
 	
 	move_delta_mm(robot, dx=-10 * u_in_mm[0])
 	robot.move(z=height + 5 * u_in_mm[2])
 	west = find_wall(robot, "X", 1, "calibrate_tip-west", touch_function)
 	robot.move(z=height - 5 * u_in_mm[2])
-	goto_slot_center(robot, x_n, y_n)
+	robot.move(x=initial_point[0], y=initial_point[1])
 	
 	move_delta_mm(robot, dy=10 * u_in_mm[1])
 	robot.move(z=height + 5 * u_in_mm[2])
 	south = find_wall(robot, "Y", -1, "calibrate_tip-south", touch_function)
 	robot.move(z=height - 5 * u_in_mm[2])
-	goto_slot_center(robot, x_n, y_n)
+	robot.move(x=initial_point[0], y=initial_point[1])
 	
 	move_delta_mm(robot, dy=-10 * u_in_mm[1])
 	robot.move(z=height + 5 * u_in_mm[2])
@@ -814,7 +843,7 @@ def calibrate_tip(robot, x_n, y_n, touch_function, initial_height_mm):
 	
 	return result
 
-def calibrate_pipettor_tip(robot, x_n, y_n):
+def calibrate_pipettor_tip(robot, x_n, y_n, initial_point=None):
 	# x_n, y_n -- coordinates of the slot that contains the stalagmite.
 	stalagmite_height_mm = 130
 	
@@ -828,7 +857,7 @@ def calibrate_pipettor_tip(robot, x_n, y_n):
 		print("ERROR: No stationary probe is connected.")
 		return
 	
-	position = calibrate_tip(robot, x_n, y_n, stat_probe.isTouched, stalagmite_height_mm + 100)
+	position = calibrate_tip(robot, x_n, y_n, stat_probe.isTouched, stalagmite_height_mm + 50, initial_point)
 	
 	tool_i = find_tool_i_by_type(robot, "pipettor")
 	robot.tools[tool_i]["params"] = {"tip": position}
@@ -843,7 +872,7 @@ def get_tool(robot, type):
 	tool = robot.tools[tool_i]
 	robot.get_tool(tool["n_x"], tool["n_y"])
 
-def calibrate_mobile_probe_tip(robot, x_n, y_n):
+def calibrate_mobile_probe_tip(robot, x_n, y_n, initial_point=None):
 	# x_n, y_n -- coordinates of the slot that contains the stalagmite.
 	stalagmite_height_mm = 130
 	
@@ -861,12 +890,23 @@ def calibrate_mobile_probe_tip(robot, x_n, y_n):
 	def touch_function():
 		return stat_probe.isTouched() or mob_probe.isTouched()
 	
-	position = calibrate_tip(robot, x_n, y_n, touch_function, stalagmite_height_mm)
+	position = calibrate_tip(robot, x_n, y_n, touch_function, stalagmite_height_mm, initial_point)
 	robot.move(z=position[2])
 	
 	tool_i = find_tool_i_by_type(robot, "mobile_probe")
 	robot.tools[tool_i]["params"] = {"tip": position}
 	update_tools(robot)
+
+def rectangle_center(rect):
+	center_x = (rect["east1"] + rect["east2"] + rect["west1"] + rect["west2"]) / 4
+	center_y = (rect["north1"] + rect["north2"] + rect["south1"] + rect["south2"]) / 4
+	return [center_x, center_y]
+
+def rectangle_center_2(rect):
+	# north1, north2, east1, east2, south1, south2, west1, west2
+	center_x = (rect[2] + rect[3] + rect[6] + rect[7]) / 4
+	center_y = (rect[0] + rect[1] + rect[4] + rect[5]) / 4
+	return [center_x, center_y]
 
 def calibrate_rectangle(robot, rect, safe_height, measure_height, name):
 	lt = rect["LT"]
@@ -977,6 +1017,7 @@ def calibrate_plate(robot, x_n, y_n):
 
 	robot.move(x = plate_center[0], y = plate_center[1])
 	plate_height = find_wall(robot, "Z", 1, "calibrate_plate-plate_center")
+	robot.move(z=plate_height)
 	
 	# TODO: This bookkeeping has to happen after each tool calibration. Factor it out?	
 	plate_tool = deepcopy(default_tool)
@@ -1062,6 +1103,15 @@ def calc_hole_position(rect, x_n, y_n, hole_x_n, hole_y_n, hole_width, hole_heig
 	
 	return [dest_x, dest_y]
 
+def probe_coord_to_tool_coord(robot, tool_tip, probe_coord):
+	probe_i = find_tool_i_by_type(robot, "mobile_probe")
+	probe_tip = robot.tools[probe_i]["params"]["tip"]
+	tool_coord = [0, 0, 0]
+	tool_coord[0] = probe_coord[0] - probe_tip[0] + tool_tip[0]
+	tool_coord[1] = probe_coord[1] - probe_tip[1] + tool_tip[1]
+	tool_coord[2] = probe_coord[2] - probe_tip[2] + tool_tip[2]
+	return tool_coord
+
 def test_tip_tray_calibration(robot, x_n, y_n):
 	tool_i = find_tool_i_by_coord(robot, x_n, y_n)
 	
@@ -1123,14 +1173,7 @@ def pickup_tip(robot, x_n, y_n, hole_x_n, hole_y_n):
 	robot.move(z=appr_z)
 	robot.move(z=dest_z, speed_z = 1000)
 
-def get_liquid(robot, x_n, y_n, hole_x_n, hole_y_n):
-	pipettor = robot.current_tool_device
-	pipettor.write("$H")
-	pipettor.readAll()
-	pipettor.write("G0 X-30")
-	pipettor.readAll()
-	time.sleep(10)
-
+def approach_well(robot, x_n, y_n, hole_x_n, hole_y_n):
 	slot = robot.params["slots"][x_n][y_n]
 	u_in_mm = robot.params["units_in_mm"]
 	tool_i = find_tool_i_by_coord(robot, x_n, y_n)
@@ -1145,10 +1188,12 @@ def get_liquid(robot, x_n, y_n, hole_x_n, hole_y_n):
 		return
 	
 	stal_dest_x, stal_dest_y = calc_hole_position(tool["params"], x_n, y_n, hole_x_n, hole_y_n, 9 * u_in_mm[0], 9 * u_in_mm[1])
-	appr_height = 20
-	dest_height = 10
+	
+	#stal_dest_x = (tool["params"]["east1"] + tool["params"]["east2"] + tool["params"]["west1"] + tool["params"]["west2"]) / 4	
+	#stal_dest_y = (tool["params"]["north1"] + tool["params"]["north2"] + tool["params"]["south1"] + tool["params"]["south2"]) / 4
+	
+	dest_height = 27
 	tip_height_mm = 75
-	stal_appr_z = slot["floor_z"] - u_in_mm[2] * (appr_height + tip_height_mm)
 	stal_dest_z = slot["floor_z"] - u_in_mm[2] * (dest_height + tip_height_mm)
 	
 	pip_tip = robot.current_tool["params"]["tip"]
@@ -1157,12 +1202,20 @@ def get_liquid(robot, x_n, y_n, hole_x_n, hole_y_n):
 	
 	dest_x = stal_dest_x - stal_tip[0] + pip_tip[0]
 	dest_y = stal_dest_y - stal_tip[1] + pip_tip[1]
-	appr_z = stal_appr_z - stal_tip[2] + pip_tip[2] 
 	dest_z = stal_dest_z - stal_tip[2] + pip_tip[2]
+
 	
 	robot.move(x=dest_x, y=dest_y)
-	robot.move(z=appr_z)
-	robot.move(z=dest_z, speed_z = 1000)
+	robot.move(z=dest_z)
+
+def get_liquid(robot, x_n, y_n, hole_x_n, hole_y_n):
+	pipettor = robot.current_tool_device
+	pipettor.write("$H")
+	pipettor.readAll()
+	pipettor.write("G0 X-30")
+	pipettor.readAll()
+	time.sleep(10)
+
 
 	pipettor.write("G0 X0")
 	pipettor.readAll()
@@ -1262,6 +1315,33 @@ def check_floor_calibration(robot):
 			goto_slot_lb(robot, col_i, row_i)
 			goto_slot_rb(robot, col_i, row_i)
 			goto_slot_rt(robot, col_i, row_i)
+
+def calibrate_circle_outer(robot, x_n, y_n, expected_z):
+	robot.home("Z")
+	goto_slot_lt(robot, x_n, y_n)
+	robot.move(z=expected_z)
+	robot.move_delta(dx=robot.params['slot_width'] / 2)
+	north = find_wall(robot, "Y", 1, "calibrate_pipettor-north")
+
+	robot.move_delta(dz = -robot.params['units_in_mm'][2] * 30)
+	goto_slot_lt(robot, x_n, y_n)
+	robot.move(z=expected_z)
+	robot.move_delta(dy=robot.params['slot_height'] / 2)
+	east = find_wall(robot, "X", 1, "calibrate_pipettor-east")
+	
+	robot.move_delta(dz = -robot.params['units_in_mm'][2] * 30)
+	goto_slot_rb(robot, x_n, y_n)
+	robot.move(z=expected_z)
+	robot.move_delta(dx=-robot.params['slot_width'] / 2)
+	south = find_wall(robot, "Y", -1, "calibrate_pipettor-south")
+	
+	robot.move_delta(dz = -robot.params['units_in_mm'][2] * 30)
+	goto_slot_rb(robot, x_n, y_n)
+	robot.move(z=expected_z)
+	robot.move_delta(dy=-robot.params['slot_height'] / 2)
+	west = find_wall(robot, "X", -1, "calibrate_pipettor-west")
+
+	return [(east + west) / 2, (south + north) / 2]
 
 def calibrate_circle(robot, approx_center):
 	robot.move(z=approx_center[2] - 100)
