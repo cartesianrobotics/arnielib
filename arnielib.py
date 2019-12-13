@@ -51,6 +51,9 @@ default_tool = {
 rack_types = ["96_well", "eppendorf", "50_ml"]
 rack_heights = {"96_well": 16, "eppendorf": 25, "50_ml": 94}
 
+pipettor_volumes = [1000, 200, 20]
+pipettor_types = ["single", "multi"]
+
 def log(text):
 	log_file = open("log.txt", "a")
 	log_file.write(text)
@@ -75,6 +78,28 @@ def axis_index(axis):
 	else:
 		result = axes.index(result)
 		return result
+
+def find_tool_i_by_type(robot, type):
+	for tool_i in range(len(robot.tools)):
+		if robot.tools[tool_i]["type"] == type:
+			return tool_i
+	return -1
+
+def find_tools_by_type(robot, type):
+	result = []
+	for tool_i in range(len(robot.tools)):
+		if robot.tools[tool_i]["type"] == type:
+			result.append(tool_i)
+	return result
+
+# x_n, y_n -- coordinates of the slot the tool is stored in. Returns the index of that tool in the arnie.tools list. 
+def find_tool_i_by_coord(robot, x_n, y_n):
+	for tool_i in range(len(robot.tools)):
+		tool = robot.tools[tool_i]
+		if tool["n_x"] == x_n and tool["n_y"] == y_n:
+			return tool_i
+	
+	return -1
 
 def serial_ports():
 	""" Lists serial port names
@@ -457,6 +482,9 @@ class arnie(serial_device):
 		"""
 		Engages with a tool, using tool instance for guidance
 		"""
+		if self.current_tool != None:
+			self.return_tool()
+		
 		tool_to_get = None
 		for saved_tool in self.tools:
 			if x_n == saved_tool["n_x"] and y_n == saved_tool["n_y"]:
@@ -755,7 +783,7 @@ def calibrate_mobile_probe_rack(robot, x_n, y_n):
 		
 	update_tools(robot)
 
-def calibrate_pipettor(robot, x_n, y_n):
+def calibrate_pipettor(robot, x_n, y_n, volume, pipettor_type):
 	pipettor_height_mm = 157
 	expected_z = robot.params["slots"][x_n][y_n]["floor_z"] - ((pipettor_height_mm - 1) * robot.params["units_in_mm"][2])
 	
@@ -797,6 +825,7 @@ def calibrate_pipettor(robot, x_n, y_n):
 	slot = robot.params["slots"][x_n][y_n]
 	tool["slot"] = deepcopy(slot)
 	tool["type"] = "pipettor"
+	tool["params"] = {"volume": volume, "pipettor_type": pipettor_type}
 	
 	tool_i = find_tool_i_by_coord(robot, x_n, y_n)
 	if tool_i != -1:
@@ -867,14 +896,39 @@ def calibrate_pipettor_tip(robot, x_n, y_n, initial_point=None):
 	robot.tools[tool_i]["params"] = {"tip": position}
 	update_tools(robot)
 
-def get_tool(robot, type):
-	tool_i = find_tool_i_by_type(robot, type)
-	if tool_i == -1:
+def get_tool(robot, type, subtype=None, volume=None):
+	tools = find_tools_by_type(robot, type)
+	if len(tools) == 0:
 		print("ERROR: No such tool exists: " + type + ".")
 		return
+	
+	if type == "pipettor":
+		if subtype == None:
+			print("ERROR: Pipettor type has to be specified.")
+			return
+		if volume == None:
+			print("ERROR: Pipettor volume has to be specified.")
+			return
+		if subtype not in pipettor_types:
+			print("ERROR: Unknown pipettor type: " + str(subtype) + ".")
+			return
+		if volume not in pipettor_volumes:
+			print("ERROR: Unknown pipettor volume: " + str(volume) + ".")
+			return
 		
-	tool = robot.tools[tool_i]
-	robot.get_tool(tool["n_x"], tool["n_y"])
+		tool_to_pickup = None
+		for tool_i in tools:
+			tool = robot.tools[tool_i]
+			if tool["params"]["volume"] == volume and tool["params"]["pipettor_type"] == subtype:
+				tool_to_pickup = tool
+				break
+		if tool_to_pickup == None:
+			print("ERROR: No such pipettor is calibrated.")
+			return
+	else:
+		tool_to_pickup = robot.tools[tools[0]]
+		
+	robot.get_tool(tool_to_pickup["n_x"], tool_to_pickup["n_y"])
 
 def calibrate_mobile_probe_tip(robot, x_n, y_n, initial_point=None):
 	# x_n, y_n -- coordinates of the slot that contains the stalagmite.
@@ -1069,15 +1123,6 @@ def calibrate_rack(robot, x_n, y_n, rack_type):
 		robot.tools[tool_i] = rack_tool
 		
 	update_tools(robot)
-
-# x_n, y_n -- coordinates of the slot the tool is stored in. Returns the index of that tool in the arnie.tools list. 
-def find_tool_i_by_coord(robot, x_n, y_n):
-	for tool_i in range(len(robot.tools)):
-		tool = robot.tools[tool_i]
-		if tool["n_x"] == x_n and tool["n_y"] == y_n:
-			return tool_i
-	
-	return -1
 
 def calc_well_position(rect, x_n, y_n, well_x_n, well_y_n, u_mm, rack_type="96_well"):
 	west1 = rect["west1"]
@@ -1809,12 +1854,6 @@ def connect_tool(port_name, robot=None):
 		device.home()
 	
 	return device
-
-def find_tool_i_by_type(robot, type):
-	for tool_i in range(len(robot.tools)):
-		if robot.tools[tool_i]["type"] == type:
-			return tool_i
-	return -1
 
 def connect():
 	ports = serial_ports()
