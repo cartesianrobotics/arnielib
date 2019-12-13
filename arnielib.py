@@ -1077,22 +1077,7 @@ def calibrate_plate(robot, x_n, y_n, plate_type):
 		
 	update_tools(robot)
 
-	#approx_hole_height = (south - north) / n_rows
-	#approx_hole_width = (east - west) / n_columns
-	#approx_first_hole = [west + approx_hole_width / 2, north + approx_hole_height / 2]
-	
-	#u_in_mm_x = robot.params["units_in_mm"][0]
-	#u_in_mm_y = robot.params["units_in_mm"][1]
-	#approx_first_hole = [plate_center[0] - 49.5 * u_in_mm_x, plate_center[1] - 31.5 * u_in_mm_y]
-	
-	#robot.move(x = approx_first_hole[0], y = approx_first_hole[1])
-	
-	#should_be_floor = find_wall(robot, "Z", 1, "calibrate_plate-first_hole")
-	
-	#robot.move(z=plate_level - 50)
-	#tmp_result = calibrate_circle()
-	#first_hole_center = [tmp_result[0], tmp_result[1]]
-
+# x_n, y_n -- coordinates of the slot the tool is stored in. Returns the index of that tool in the arnie.tools list. 
 def find_tool_i_by_coord(robot, x_n, y_n):
 	for tool_i in range(len(robot.tools)):
 		tool = robot.tools[tool_i]
@@ -1101,7 +1086,7 @@ def find_tool_i_by_coord(robot, x_n, y_n):
 	
 	return -1
 
-def calc_hole_position(rect, x_n, y_n, hole_x_n, hole_y_n, u_mm, plate_type="96_well"):
+def calc_well_position(rect, x_n, y_n, well_x_n, well_y_n, u_mm, plate_type="96_well"):
 	west1 = rect["west1"]
 	west2 = rect["west2"]
 	east1 = rect["east1"]
@@ -1117,20 +1102,20 @@ def calc_hole_position(rect, x_n, y_n, hole_x_n, hole_y_n, u_mm, plate_type="96_
 	if plate_type == "96_well":
 		well_width = 9 * u_mm[0]
 		well_height = 9 * u_mm[1]
-		first_hole = [plate_center[0] - well_width * 11 / 2, plate_center[1] - well_height * 7 / 2]
+		first_well = [plate_center[0] - well_width * 11 / 2, plate_center[1] - well_height * 7 / 2]
 	elif plate_type == "eppendorf":
 		well_width = 17 * u_mm[0]
 		well_height = 23 * u_mm[1]
-		first_hole = [plate_center[0] - 59.5 * u_mm[0], plate_center[1] - 28 * u_mm[1]]
+		first_well = [plate_center[0] - 59.5 * u_mm[0], plate_center[1] - 28 * u_mm[1]]
 	elif plate_type == "50_ml":
 		well_width = 50 * u_mm[0]
 		well_height = 50 * u_mm[1]
-		first_hole = [plate_center[0] - well_width, plate_center[1] - well_height * 1 / 2]
+		first_well = [plate_center[0] - well_width, plate_center[1] - well_height * 1 / 2]
 	else: 
 		print("ERROR: Unknown plate type:" + str(plate_type) + ".")
 
-	dest_x = first_hole[0] + hole_x_n * well_width
-	dest_y = first_hole[1] + hole_y_n * well_height
+	dest_x = first_well[0] + well_x_n * well_width
+	dest_y = first_well[1] + well_y_n * well_height
 	
 	return [dest_x, dest_y]
 
@@ -1171,7 +1156,7 @@ def test_tip_tray_calibration(robot, x_n, y_n):
 			robot.current_tool_device.drop_tip()
 			time.sleep(7)
 
-def pickup_tip(robot, x_n, y_n, hole_x_n, hole_y_n):
+def pickup_tip(robot, x_n, y_n, well_x_n, well_y_n):
 	slot = robot.params["slots"][x_n][y_n]
 	u_in_mm = robot.params["units_in_mm"]
 	tool_i = find_tool_i_by_coord(robot, x_n, y_n)
@@ -1185,7 +1170,7 @@ def pickup_tip(robot, x_n, y_n, hole_x_n, hole_y_n):
 		print("ERROR: The tool in  slot (" + str(x_n) + ", " + str(y_n) + ") is not a tip tray.")
 		return
 	
-	stal_dest_x, stal_dest_y = calc_hole_position(tool["params"], x_n, y_n, hole_x_n, hole_y_n, 9 * u_in_mm[0], 9 * u_in_mm[1])
+	stal_dest_x, stal_dest_y = calc_well_position(tool["params"], x_n, y_n, well_x_n, well_y_n, 9 * u_in_mm[0], 9 * u_in_mm[1])
 	approach_height = 95
 	dest_height = 85
 	stal_appr_z = slot["floor_z"] - u_in_mm[2] * approach_height
@@ -1204,7 +1189,7 @@ def pickup_tip(robot, x_n, y_n, hole_x_n, hole_y_n):
 	robot.move(z=appr_z)
 	robot.move(z=dest_z, speed_z = 1000)
 
-def approach_well(robot, x_n, y_n, hole_x_n, hole_y_n):
+def approach_well(robot, x_n, y_n, well_x_n, well_y_n):
 	slot = robot.params["slots"][x_n][y_n]
 	u_in_mm = robot.params["units_in_mm"]
 	tool_i = find_tool_i_by_coord(robot, x_n, y_n)
@@ -1218,7 +1203,7 @@ def approach_well(robot, x_n, y_n, hole_x_n, hole_y_n):
 		print("ERROR: The tool in  slot (" + str(x_n) + ", " + str(y_n) + ") is not a plate.")
 		return
 	
-	stal_dest_x, stal_dest_y = calc_hole_position(tool["params"], x_n, y_n, hole_x_n, hole_y_n, 9 * u_in_mm[0], 9 * u_in_mm[1])
+	stal_dest_x, stal_dest_y = calc_well_position(tool["params"], x_n, y_n, well_x_n, well_y_n, 9 * u_in_mm[0], 9 * u_in_mm[1])
 	
 	#stal_dest_x = (tool["params"]["east1"] + tool["params"]["east2"] + tool["params"]["west1"] + tool["params"]["west2"]) / 4	
 	#stal_dest_y = (tool["params"]["north1"] + tool["params"]["north2"] + tool["params"]["south1"] + tool["params"]["south2"]) / 4
@@ -1238,7 +1223,7 @@ def approach_well(robot, x_n, y_n, hole_x_n, hole_y_n):
 	robot.move(x=dest_x, y=dest_y)
 	robot.move(z=dest_z)
 
-def get_liquid(robot, x_n, y_n, hole_x_n, hole_y_n):
+def get_liquid(robot, x_n, y_n, well_x_n, well_y_n):
 	pipettor = robot.current_tool_device
 	pipettor.write("$H")
 	pipettor.readAll()
@@ -1253,7 +1238,7 @@ def get_liquid(robot, x_n, y_n, hole_x_n, hole_y_n):
 	
 	robot.move_delta(dz = -50 * u_in_mm[2])
 
-def drop_liquid(robot, x_n, y_n, hole_x_n, hole_y_n):
+def drop_liquid(robot, x_n, y_n, well_x_n, well_y_n):
 	pipettor = robot.current_tool_device
 	pipettor.write("$H")
 	pipettor.readAll()
@@ -1272,7 +1257,7 @@ def drop_liquid(robot, x_n, y_n, hole_x_n, hole_y_n):
 		print("ERROR: The tool in  slot (" + str(x_n) + ", " + str(y_n) + ") is not a plate.")
 		return
 	
-	stal_dest_x, stal_dest_y = calc_hole_position(tool["params"], x_n, y_n, hole_x_n, hole_y_n, 9 * u_in_mm[0], 9 * u_in_mm[1])
+	stal_dest_x, stal_dest_y = calc_well_position(tool["params"], x_n, y_n, well_x_n, well_y_n, 9 * u_in_mm[0], 9 * u_in_mm[1])
 	appr_height = 20
 	dest_height = 10
 	tip_height_mm = 75
@@ -1299,7 +1284,7 @@ def drop_liquid(robot, x_n, y_n, hole_x_n, hole_y_n):
 	robot.move_delta(dz = -50 * u_in_mm[2])
 
 # Makes the stalactite go to a certain well in a plate.
-def goto_plate_hole(robot, x_n, y_n, hole_x_n, hole_y_n):
+def goto_plate_well(robot, x_n, y_n, well_x_n, well_y_n):
 	tool_i = find_tool_i_by_coord(robot, x_n, y_n)
 	if tool_i == -1:
 		print("ERROR: No tool in slot (" + str(x_n) + ", " + str(y_n) + ").")
@@ -1315,7 +1300,7 @@ def goto_plate_hole(robot, x_n, y_n, hole_x_n, hole_y_n):
 	
 	plate_type = tool["params"]["plate_type"]
 	
-	dest_x, dest_y = calc_hole_position(tool["params"], x_n, y_n, hole_x_n, hole_y_n, u_mm, plate_type)
+	dest_x, dest_y = calc_well_position(tool["params"], x_n, y_n, well_x_n, well_y_n, u_mm, plate_type)
 	dest_z = tool["params"]["height"] - 1 * u_mm[2]
 	
 	robot.move(x=dest_x, y=dest_y, z=dest_z)
@@ -1338,7 +1323,7 @@ def check_plate_calibration(robot, x_n, y_n):
 	
 	for column_i in range(tool["params"]["width_n"]):
 		for row_i in range(tool["params"]["height_n"]):
-			goto_plate_hole(robot, x_n, y_n, column_i, row_i)
+			goto_plate_well(robot, x_n, y_n, column_i, row_i)
 	
 def check_floor_calibration(robot):
 	w_n = robot.params["width_n"]
