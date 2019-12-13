@@ -48,6 +48,9 @@ default_tool = {
 	"params": None
 }
 
+rack_types = ["96_well", "eppendorf", "50_ml"]
+rack_heights = {"96_well": 16, "eppendorf": 25, "50_ml": 94}
+
 def log(text):
 	log_file = open("log.txt", "a")
 	log_file.write(text)
@@ -925,7 +928,7 @@ def calibrate_rectangle(robot, rect, safe_height, measure_height, name):
 	robot.move_delta(dx=rect_width / 3)
 	north2 = find_wall(robot, "Y", 1, name + "calibrate_rectangle-north2")
 	
-	# I wanted to calibrate the height of the plate here, but then decided to do it in the center. 
+	# I wanted to calibrate the height of the rack here, but then decided to do it in the center. 
 	# find_wall_end(robot, "Y", 1, "Z", -1, 10 * robot.params["units_in_mm"][2], name="calibrate_rectangle-north")
 	
 	robot.move(z=safe_height)
@@ -998,57 +1001,53 @@ def calibrate_tip_tray(robot, x_n, y_n):
 		robot.tools[tool_i] = tool
 	update_tools(robot)
 
-plate_types = ["96_well", "eppendorf", "50_ml"]
-
-def calibrate_plate(robot, x_n, y_n, plate_type):
-	if plate_type not in plate_types:
-		print("ERROR: unknown plate type: " + plate_type + ".")
-		print("Known plate types:")
-		print(plate_types)
+def calibrate_rack(robot, x_n, y_n, rack_type):
+	if rack_type not in rack_types:
+		print("ERROR: unknown rack type: " + rack_type + ".")
+		print("Known rack types:")
+		print(rack_types)
 		return
 
 	slot = robot.params["slots"][x_n][y_n]
-	
 	u_mm = robot.params["units_in_mm"]
 	
 	robot.home("Z")
 	goto_slot_lt(robot, x_n, y_n)
 	
-	if plate_type == "96_well":
-		plate_level = slot["floor_z"] - u_mm[2] * 14
+	rack_level = slot["floor_z"] - u_mm[2] * (rack_heights[rack_type] - 2)
+	
+	if rack_type == "96_well":
 		n_columns = 12
 		n_rows = 8	
-	elif plate_type == "eppendorf":
-		plate_level = slot["floor_z"] - u_mm[2] * 23
+	elif rack_type == "eppendorf":
 		n_columns = 8
 		n_rows = 4
-	elif plate_type == "50_ml":
-		plate_level = slot["floor_z"] - u_mm[2] * 91
+	elif rack_type == "50_ml":
 		n_columns = 3
 		n_rows = 2
 		
-	plate_safe_height = plate_level - 30 * u_mm[2]
+	rack_safe_height = rack_level - 30 * u_mm[2]
 	
-	north1, north2, east1, east2, south1, south2, west1, west2 = calibrate_rectangle(robot, robot.params["slots"][x_n][y_n], plate_safe_height, plate_level, "calibrate_plate-")
+	north1, north2, east1, east2, south1, south2, west1, west2 = calibrate_rectangle(robot, robot.params["slots"][x_n][y_n], rack_safe_height, rack_level, "calibrate_rack-")
 
-	plate_center = [(west1 + east1 + west2 + east2) / 4, (north1 + south1 + north2 + south2) / 4]
+	rack_center = [(west1 + east1 + west2 + east2) / 4, (north1 + south1 + north2 + south2) / 4]
 
-	robot.move(x = plate_center[0], y = plate_center[1])
-	plate_height = find_wall(robot, "Z", 1, "calibrate_plate-plate_center")
-	robot.move(z=plate_height)
+	robot.move(x = rack_center[0], y = rack_center[1])
+	rack_height = find_wall(robot, "Z", 1, "calibrate_rack-rack_center")
+	robot.move(z=rack_height)
 	
 	# TODO: This bookkeeping has to happen after each tool calibration. Factor it out?	
-	plate_tool = deepcopy(default_tool)
-	plate_tool["position"][0] = plate_center[0]
-	plate_tool["position"][1] = plate_center[1]
-	plate_tool["position"][2] = plate_height
+	rack_tool = deepcopy(default_tool)
+	rack_tool["position"][0] = rack_center[0]
+	rack_tool["position"][1] = rack_center[1]
+	rack_tool["position"][2] = rack_height
 	
-	plate_tool["n_x"] = x_n
-	plate_tool["n_y"] = y_n
-	plate_tool["slot"] = deepcopy(slot)
-	plate_tool["type"] = "plate"
+	rack_tool["n_x"] = x_n
+	rack_tool["n_y"] = y_n
+	rack_tool["slot"] = deepcopy(slot)
+	rack_tool["type"] = "rack"
 	
-	plate_tool["params"] = {
+	rack_tool["params"] = {
 		"north1": north1,
 		"north2": north2,
 		"south1": south1,
@@ -1057,23 +1056,17 @@ def calibrate_plate(robot, x_n, y_n, plate_type):
 		"east2": east2,
 		"west1": west1,
 		"west2": west2,
-		"height": plate_height,
+		"height": rack_height,
 		"width_n": n_columns,
 		"height_n": n_rows,
-		"plate_type": plate_type
+		"rack_type": rack_type
 	}
 	
-	tool_exists = False
-	# TODO: This search happens often. Factor it out?
-	for tool_i in range(len(robot.tools)):
-		tool = robot.tools[tool_i]
-		if tool["n_x"] == x_n and tool["n_y"] == y_n:
-			robot.tools[tool_i] = plate_tool
-			tool_exists = True
-			break
-	
-	if not tool_exists:
-		robot.tools.append(plate_tool)
+	tool_i = find_tool_i_by_coord(robot, x_n, y_n)
+	if tool_i == -1:
+		robot.tools.append(rack_tool)
+	else:
+		robot.tools[tool_i] = rack_tool
 		
 	update_tools(robot)
 
@@ -1086,7 +1079,7 @@ def find_tool_i_by_coord(robot, x_n, y_n):
 	
 	return -1
 
-def calc_well_position(rect, x_n, y_n, well_x_n, well_y_n, u_mm, plate_type="96_well"):
+def calc_well_position(rect, x_n, y_n, well_x_n, well_y_n, u_mm, rack_type="96_well"):
 	west1 = rect["west1"]
 	west2 = rect["west2"]
 	east1 = rect["east1"]
@@ -1097,22 +1090,22 @@ def calc_well_position(rect, x_n, y_n, well_x_n, well_y_n, u_mm, plate_type="96_
 	south2 = rect["south2"]
 	
 	# TODO: More precise positioning that takes skewness into account.
-	plate_center = [(west1 + east1 + west2 + east2) / 4, (north1 + south1 + north2 + south2) / 4]
+	rack_center = [(west1 + east1 + west2 + east2) / 4, (north1 + south1 + north2 + south2) / 4]
 	
-	if plate_type == "96_well":
+	if rack_type == "96_well":
 		well_width = 9 * u_mm[0]
 		well_height = 9 * u_mm[1]
-		first_well = [plate_center[0] - well_width * 11 / 2, plate_center[1] - well_height * 7 / 2]
-	elif plate_type == "eppendorf":
+		first_well = [rack_center[0] - well_width * 11 / 2, rack_center[1] - well_height * 7 / 2]
+	elif rack_type == "eppendorf":
 		well_width = 17 * u_mm[0]
 		well_height = 23 * u_mm[1]
-		first_well = [plate_center[0] - 59.5 * u_mm[0], plate_center[1] - 28 * u_mm[1]]
-	elif plate_type == "50_ml":
+		first_well = [rack_center[0] - 59.5 * u_mm[0], rack_center[1] - 28 * u_mm[1]]
+	elif rack_type == "50_ml":
 		well_width = 50 * u_mm[0]
 		well_height = 50 * u_mm[1]
-		first_well = [plate_center[0] - well_width, plate_center[1] - well_height * 1 / 2]
+		first_well = [rack_center[0] - well_width, rack_center[1] - well_height * 1 / 2]
 	else: 
-		print("ERROR: Unknown plate type:" + str(plate_type) + ".")
+		print("ERROR: Unknown rack type:" + str(rack_type) + ".")
 
 	dest_x = first_well[0] + well_x_n * well_width
 	dest_y = first_well[1] + well_y_n * well_height
@@ -1199,14 +1192,11 @@ def approach_well(robot, x_n, y_n, well_x_n, well_y_n):
 		
 	tool = robot.tools[tool_i]
 	
-	if tool["type"] != "plate":
-		print("ERROR: The tool in  slot (" + str(x_n) + ", " + str(y_n) + ") is not a plate.")
+	if tool["type"] != "rack":
+		print("ERROR: The tool in  slot (" + str(x_n) + ", " + str(y_n) + ") is not a rack.")
 		return
 	
 	stal_dest_x, stal_dest_y = calc_well_position(tool["params"], x_n, y_n, well_x_n, well_y_n, 9 * u_in_mm[0], 9 * u_in_mm[1])
-	
-	#stal_dest_x = (tool["params"]["east1"] + tool["params"]["east2"] + tool["params"]["west1"] + tool["params"]["west2"]) / 4	
-	#stal_dest_y = (tool["params"]["north1"] + tool["params"]["north2"] + tool["params"]["south1"] + tool["params"]["south2"]) / 4
 	
 	dest_height = 27
 	tip_height_mm = 75
@@ -1253,8 +1243,8 @@ def drop_liquid(robot, x_n, y_n, well_x_n, well_y_n):
 		
 	tool = robot.tools[tool_i]
 	
-	if tool["type"] != "plate":
-		print("ERROR: The tool in  slot (" + str(x_n) + ", " + str(y_n) + ") is not a plate.")
+	if tool["type"] != "rack":
+		print("ERROR: The tool in  slot (" + str(x_n) + ", " + str(y_n) + ") is not a rack.")
 		return
 	
 	stal_dest_x, stal_dest_y = calc_well_position(tool["params"], x_n, y_n, well_x_n, well_y_n, 9 * u_in_mm[0], 9 * u_in_mm[1])
@@ -1283,8 +1273,8 @@ def drop_liquid(robot, x_n, y_n, well_x_n, well_y_n):
 	
 	robot.move_delta(dz = -50 * u_in_mm[2])
 
-# Makes the stalactite go to a certain well in a plate.
-def goto_plate_well(robot, x_n, y_n, well_x_n, well_y_n):
+# Makes the stalactite go to a certain well in a rack. TODO: Replace with "approach well". 
+def goto_rack_well(robot, x_n, y_n, well_x_n, well_y_n):
 	tool_i = find_tool_i_by_coord(robot, x_n, y_n)
 	if tool_i == -1:
 		print("ERROR: No tool in slot (" + str(x_n) + ", " + str(y_n) + ").")
@@ -1292,21 +1282,21 @@ def goto_plate_well(robot, x_n, y_n, well_x_n, well_y_n):
 		
 	tool = robot.tools[tool_i]
 	
-	if tool["type"] != "plate":
-		print("ERROR: The tool in  slot (" + str(x_n) + ", " + str(y_n) + ") is not a plate.")
+	if tool["type"] != "rack":
+		print("ERROR: The tool in  slot (" + str(x_n) + ", " + str(y_n) + ") is not a rack.")
 		return
 		
 	u_mm = robot.params["units_in_mm"]
 	
-	plate_type = tool["params"]["plate_type"]
+	rack_type = tool["params"]["rack_type"]
 	
-	dest_x, dest_y = calc_well_position(tool["params"], x_n, y_n, well_x_n, well_y_n, u_mm, plate_type)
+	dest_x, dest_y = calc_well_position(tool["params"], x_n, y_n, well_x_n, well_y_n, u_mm, rack_type)
 	dest_z = tool["params"]["height"] - 1 * u_mm[2]
 	
 	robot.move(x=dest_x, y=dest_y, z=dest_z)
 
-# Makes the stalactite visit the center of every well of a plate. 
-def check_plate_calibration(robot, x_n, y_n):
+# Makes the stalactite visit the center of every well of a rack. 
+def check_rack_calibration(robot, x_n, y_n):
 	tool_i = find_tool_i_by_coord(robot, x_n, y_n)
 	if tool_i == -1:
 		print("ERROR: No tool in slot (" + str(x_n) + ", " + str(y_n) + ").")
@@ -1314,8 +1304,8 @@ def check_plate_calibration(robot, x_n, y_n):
 		
 	tool = robot.tools[tool_i]
 	
-	if tool["type"] != "plate":
-		print("ERROR: The tool in  slot (" + str(x_n) + ", " + str(y_n) + ") is not a plate.")
+	if tool["type"] != "rack":
+		print("ERROR: The tool in  slot (" + str(x_n) + ", " + str(y_n) + ") is not a rack.")
 		return
 	
 	robot.home("Z")
@@ -1323,7 +1313,7 @@ def check_plate_calibration(robot, x_n, y_n):
 	
 	for column_i in range(tool["params"]["width_n"]):
 		for row_i in range(tool["params"]["height_n"]):
-			goto_plate_well(robot, x_n, y_n, column_i, row_i)
+			goto_rack_well(robot, x_n, y_n, column_i, row_i)
 	
 def check_floor_calibration(robot):
 	w_n = robot.params["width_n"]
