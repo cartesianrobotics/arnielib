@@ -807,7 +807,7 @@ def calibrate_mobile_probe_rack(robot, x_n, y_n):
 
 def calibrate_pipettor(robot, x_n, y_n, volume, pipettor_type):
 	pipettor_height_mm = 157
-	expected_z = robot.params["slots"][x_n][y_n]["floor_z"] - ((pipettor_height_mm - 1) * robot.params["units_in_mm"][2])
+	expected_z = robot.params["slots"][x_n][y_n]["floor_z"] - ((pipettor_height_mm - 3) * robot.params["units_in_mm"][2])
 	
 	robot.home("Z")
 	goto_slot_lt(robot, x_n, y_n)
@@ -997,9 +997,8 @@ def calibrate_rectangle(robot, rect, safe_height, measure_height, name):
 	rect_height = ((lb[1] - lt[1]) + (rb[1] - rt[1])) / 2
 
 	robot.move(z=safe_height)
-	robot.move(x=lt[0], y=lt[1])
+	robot.move(x=lt[0] + rect_width / 3, y=lt[1])
 	robot.move(z=measure_height)
-	robot.move_delta(dx=rect_width / 3)
 	north1 = find_wall(robot, "Y", 1, name + "calibrate_rectangle-north1")
 	robot.move_delta(dx=rect_width / 3)
 	north2 = find_wall(robot, "Y", 1, name + "calibrate_rectangle-north2")
@@ -1008,25 +1007,22 @@ def calibrate_rectangle(robot, rect, safe_height, measure_height, name):
 	# find_wall_end(robot, "Y", 1, "Z", -1, 10 * robot.params["units_in_mm"][2], name="calibrate_rectangle-north")
 	
 	robot.move(z=safe_height)
-	robot.move(x=rt[0], y=rt[1])
+	robot.move(x=rt[0], y=rt[1] + rect_height / 3)
 	robot.move(z=measure_height)
-	robot.move_delta(dy=rect_height / 3)
 	east1 = find_wall(robot, "X", -1, name + "calibrate_rectangle-east1")
 	robot.move_delta(dy=rect_height / 3)
 	east2 = find_wall(robot, "X", -1, name + "calibrate_rectangle-east2")
 
 	robot.move(z=safe_height)
-	robot.move(x=rb[0], y=rb[1])
+	robot.move(x=rb[0] - rect_width / 3, y=rb[1])
 	robot.move(z=measure_height)
-	robot.move_delta(dx=-rect_width / 3)
 	south2 = find_wall(robot, "Y", -1, name + "calibrate_rectangle-south2")
 	robot.move_delta(dx=-rect_width / 3)
 	south1 = find_wall(robot, "Y", -1, name + "calibrate_rectangle-south1")
 	
 	robot.move(z=safe_height)
-	robot.move(x=lb[0], y=lb[1])
+	robot.move(x=lb[0], y=lb[1] - rect_height / 3)
 	robot.move(z=measure_height)
-	robot.move_delta(dy=-rect_height / 3)
 	west2 = find_wall(robot, "X", 1, name + "calibrate_rectangle-west2")
 	robot.move_delta(dy=-rect_height / 3)
 	west1 = find_wall(robot, "X", 1, name + "calibrate_rectangle-west1")
@@ -1034,14 +1030,24 @@ def calibrate_rectangle(robot, rect, safe_height, measure_height, name):
 	
 	return [north1, north2, east1, east2, south1, south2, west1, west2]
 
-def calibrate_tip_tray(robot, x_n, y_n):
+def calibrate_tip_tray(robot, x_n, y_n, tray_volume):
 	slot = robot.params["slots"][x_n][y_n]
 	robot.home("Z")
 	goto_slot_lt(robot, x_n, y_n)
 	
 	floor = slot["floor_z"]
+	
 	tray_safe_height = floor - 100 * robot.params["units_in_mm"][2]
-	tray_measure_height = floor - 70 * robot.params["units_in_mm"][2]
+	
+	if tray_volume == 1000:
+		tray_measure_height = floor - 70 * robot.params["units_in_mm"][2]
+	elif tray_volume == 200:
+		tray_measure_height = floor - 45 * robot.params["units_in_mm"][2]
+	elif tray_volume == 20:
+		tray_measure_height = floor - 45 * robot.params["units_in_mm"][2]
+	else:
+		print("ERROR: Unknown volume: " + str(tray_volume))
+		return 
 	
 	north1, north2, east1, east2, south1, south2, west1, west2 = calibrate_rectangle(robot, robot.params["slots"][x_n][y_n], tray_safe_height, tray_measure_height, "calibrate_tip_tray-")
 	
@@ -1067,7 +1073,8 @@ def calibrate_tip_tray(robot, x_n, y_n):
 		"west1": west1,
 		"west2": west2,
 		"width_n": 12,
-		"height_n": 8
+		"height_n": 8,
+		"volume": tray_volume
 	}
 	
 	tool_i = find_tool_i_by_coord(robot, x_n, y_n)
@@ -1231,8 +1238,22 @@ def pickup_tip(robot, x_n, y_n, well_x_n, well_y_n):
 		return
 	
 	stal_dest_x, stal_dest_y = calc_well_position(tool["params"], x_n, y_n, well_x_n, well_y_n, u_in_mm, "96_well")
-	approach_height = 95
-	dest_height = 85
+	
+	tray_volume = tool["params"]["volume"]
+	
+	if tray_volume == 1000:
+		approach_height = 95
+		dest_height = 84
+	if tray_volume == 200:
+		approach_height = 60
+		dest_height = 49.5
+	if tray_volume == 20:
+		approach_height = 60
+		dest_height = 42
+	else:
+		print("ERROR: Unknown volume: " + str(tray_volume))
+		return
+	
 	stal_appr_z = slot["floor_z"] - u_in_mm[2] * approach_height
 	stal_dest_z = slot["floor_z"] - u_in_mm[2] * dest_height
 	
@@ -1421,6 +1442,30 @@ def release_liquid(robot, x_n, y_n, plunger_level, delay=0, speed=700):
 	robot.move_delta(dy = -touch_wall)
 	robot.move_delta(dz = -drop)
 	set_plunger_level(pipettor, 0)
+
+# Assumes a 50 ml source rack with a full tube in 0, 0 slot and an eppendorf destination rack with empty tubes in all slots
+def calibrate_volume(robot, source_x, source_y, dest_x, dest_y):
+	dest_width = 8
+	dest_height = 4
+	
+	u_mm = robot.params["units_in_mm"]
+
+	robot.move(z = 100 * u_mm[2])
+	
+	plunger_level = 1
+	data_point_i = 0
+	
+	for row_i in [0, 2, 3]:
+		for column_i in range(dest_width):
+			approach_well(robot, source_x, source_y, 0, 0)
+			uptake_liquid(robot, source_x, source_y, 50, plunger_level)
+			approach_well(robot, dest_x, dest_y, column_i, row_i)
+			release_liquid(robot, source_x, source_y, plunger_level)
+			robot.move_delta(dz = -150 * u_mm[2])
+			data_point_i += 1
+			if data_point_i == 4:
+				data_point_i = 0
+				plunger_level += 5
 
 # Makes the stalactite go to a certain well in a rack. TODO: Replace with "approach well". 
 def goto_rack_well(robot, x_n, y_n, well_x_n, well_y_n):
