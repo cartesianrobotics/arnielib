@@ -1367,14 +1367,14 @@ def uptake_liquid(robot, x_n, y_n, expected_liquid_level, plunger_level, delay=0
 	
 	pipettor = robot.current_tool_device
 	
-	drop = tube_height - expected_liquid_level + 2
+	drop = (tube_height - expected_liquid_level + 2) * u_mm[2]
 	
 	set_pipettor_speed(pipettor, speed)
 	set_plunger_level(pipettor, plunger_level)
-	robot.move_delta(dz = drop * u_mm[2])
+	robot.move_delta(dz = drop)
 	set_plunger_level(pipettor, 0)
 	time.sleep(delay)
-	robot.move_delta(dz = -drop * u_mm[2])
+	robot.move_delta(dz = -drop)
 	
 def release_liquid(robot, x_n, y_n, plunger_level, delay=0, speed=700):
 	# TODO: Calculate x_n and y_n from the position. 
@@ -1396,24 +1396,30 @@ def release_liquid(robot, x_n, y_n, plunger_level, delay=0, speed=700):
 	
 	if rack_type == "96_well":	
 		tube_height = 21
+		tube_width = 6
 	elif rack_type == "eppendorf":
 		tube_height = 39
+		tube_width = 10
 	elif rack_type == "50_ml":
 		tube_height = 113
+		tube_width = 0 # This is temporary.
 	else:
 		print("ERROR: Unknown rack type: " + str(rack_type))
 		return
 	
 	pipettor = robot.current_tool_device
 	
-	drop = tube_height / 5 # CONSTANT
+	drop = (tube_height / 4 + 2) * u_mm[2] # CONSTANT
+	touch_wall = tube_width * u_mm[1] * 3/4
 	
 	set_pipettor_speed(pipettor, speed)
-	robot.move_delta(dz = drop * u_mm[2])
+	robot.move_delta(dz = drop)
 	set_plunger_level(pipettor, plunger_level)
 	time.sleep(delay)
-	robot.move_delta(dz = -drop * u_mm[2])
 	set_plunger_level(pipettor, plunger_level + 5)
+	robot.move_delta(dy = touch_wall)
+	robot.move_delta(dy = -touch_wall)
+	robot.move_delta(dz = -drop)
 	set_plunger_level(pipettor, 0)
 
 def get_liquid(robot, x_n, y_n, well_x_n, well_y_n):
