@@ -45,6 +45,7 @@ default_tool = {
 	"n_y": -1,
 	"type": None, # probe, pipettor, etc.
 	"position": [-1, -1, -1],
+	"tip": [-1, -1, -1],
 	"params": None
 }
 
@@ -893,7 +894,7 @@ def calibrate_pipettor_tip(robot, x_n, y_n, initial_point=None):
 	position = calibrate_tip(robot, x_n, y_n, stat_probe.isTouched, stalagmite_height_mm + 50, initial_point)
 	
 	tool_i = find_tool_i_by_type(robot, "pipettor")
-	robot.tools[tool_i]["params"] = {"tip": position}
+	robot.tools[tool_i]["tip"] =  position
 	update_tools(robot)
 
 def get_tool(robot, type, subtype=None, volume=None):
@@ -1208,13 +1209,17 @@ def pickup_tip(robot, x_n, y_n, well_x_n, well_y_n):
 		print("ERROR: The tool in  slot (" + str(x_n) + ", " + str(y_n) + ") is not a tip tray.")
 		return
 	
-	stal_dest_x, stal_dest_y = calc_well_position(tool["params"], x_n, y_n, well_x_n, well_y_n, 9 * u_in_mm[0], 9 * u_in_mm[1])
+	stal_dest_x, stal_dest_y = calc_well_position(tool["params"], x_n, y_n, well_x_n, well_y_n, u_in_mm, "96_well")
 	approach_height = 95
 	dest_height = 85
 	stal_appr_z = slot["floor_z"] - u_in_mm[2] * approach_height
 	stal_dest_z = slot["floor_z"] - u_in_mm[2] * dest_height
 	
-	pip_tip = robot.current_tool["params"]["tip"]
+	pip_tip = robot.current_tool["tip"]
+	if pip_tip[0] < 0 or pip_tip[1] < 0 or pip_tip[2] < 0:
+		print("ERROR: Pipettor tip is not calibrated.")
+		return
+	
 	stal_i = find_tool_i_by_type(robot, "mobile_probe")
 	stal_tip = robot.tools[stal_i]["params"]["tip"]
 	
@@ -1226,28 +1231,74 @@ def pickup_tip(robot, x_n, y_n, well_x_n, well_y_n):
 	robot.move(x=dest_x, y=dest_y)
 	robot.move(z=appr_z)
 	robot.move(z=dest_z, speed_z = 1000)
+	
+	robot.move_delta(dz = -100 * u_in_mm[2])
 
+# Positions the tip of the pipettor 2mm above the well. 
+# Assumes that the robot is within safe region from the well. 
+# Meaning, if it goes by xy first and by z after that, it won't hit anything. 
+# Pay attention to navigation and use at your own risk.
 def approach_well(robot, x_n, y_n, well_x_n, well_y_n):
 	slot = robot.params["slots"][x_n][y_n]
 	u_in_mm = robot.params["units_in_mm"]
-	tool_i = find_tool_i_by_coord(robot, x_n, y_n)
-	if tool_i == -1:
+	rack_i = find_tool_i_by_coord(robot, x_n, y_n)
+	if rack_i == -1:
 		print("ERROR: No tool in slot (" + str(x_n) + ", " + str(y_n) + ").")
 		return
 		
-	tool = robot.tools[tool_i]
+	rack = robot.tools[rack_i]
 	
-	if tool["type"] != "rack":
+	if rack["type"] != "rack":
 		print("ERROR: The tool in  slot (" + str(x_n) + ", " + str(y_n) + ") is not a rack.")
 		return
 	
-	stal_dest_x, stal_dest_y = calc_well_position(tool["params"], x_n, y_n, well_x_n, well_y_n, 9 * u_in_mm[0], 9 * u_in_mm[1])
+	rack_type = rack["params"]["rack_type"]
 	
-	dest_height = 27
-	tip_height_mm = 75
+	if rack_type == "96_well":
+		tube_height_above_rack = 10
+	elif rack_type == "eppendorf":
+		tube_height_above_rack = 13
+	elif rack_type == "50_ml":
+		tube_height_above_rack = 21
+	else:
+		print("ERROR: Unknown rack type: " + str(rack_type))
+		return
+
+	
+	stal_dest_x, stal_dest_y = calc_well_position(rack["params"], x_n, y_n, well_x_n, well_y_n, u_in_mm, rack_type)
+	
+	dest_height = tube_height_above_rack + rack_heights[rack_type] + 2
+	
+	if robot.current_tool == None:
+		print("ERROR: No pipettor is attached.")
+		return
+	
+	pipettor = robot.current_tool
+	
+	if pipettor["type"] != "pipettor":
+		print("ERROR: Attached tool is not a pipettor.")
+		return
+	
+	pipettor_volume = pipettor["params"]["volume"]
+	pipettor_type = pipettor["params"]["pipettor_type"]
+	
+	if pipettor_type == "multi":
+		print("ERROR: This feature is under construction.")
+		return
+	
+	if pipettor_volume == 1000:
+		tip_height_mm = 76
+	elif pipettor_volume == 200:
+		tip_height_mm = 42
+	elif pipettor_volume == 20:
+		tip_height_mm = 43
+	else:
+		print("ERROR: Unknown pipettor type.")
+		return
+	
 	stal_dest_z = slot["floor_z"] - u_in_mm[2] * (dest_height + tip_height_mm)
 	
-	pip_tip = robot.current_tool["params"]["tip"]
+	pip_tip = pipettor["tip"]
 	stal_i = find_tool_i_by_type(robot, "mobile_probe")
 	stal_tip = robot.tools[stal_i]["params"]["tip"]
 	
@@ -1376,25 +1427,25 @@ def calibrate_circle_outer(robot, x_n, y_n, expected_z):
 	goto_slot_lt(robot, x_n, y_n)
 	robot.move(z=expected_z)
 	robot.move_delta(dx=robot.params['slot_width'] / 2)
-	north = find_wall(robot, "Y", 1, "calibrate_pipettor-north")
+	north = find_wall(robot, "Y", 1, "calibrate_circle_outer-north")
 
 	robot.move_delta(dz = -robot.params['units_in_mm'][2] * 30)
 	goto_slot_lt(robot, x_n, y_n)
 	robot.move(z=expected_z)
 	robot.move_delta(dy=robot.params['slot_height'] / 2)
-	east = find_wall(robot, "X", 1, "calibrate_pipettor-east")
+	east = find_wall(robot, "X", 1, "calibrate_circle_outer-east")
 	
 	robot.move_delta(dz = -robot.params['units_in_mm'][2] * 30)
 	goto_slot_rb(robot, x_n, y_n)
 	robot.move(z=expected_z)
 	robot.move_delta(dx=-robot.params['slot_width'] / 2)
-	south = find_wall(robot, "Y", -1, "calibrate_pipettor-south")
+	south = find_wall(robot, "Y", -1, "calibrate_circle_outer-south")
 	
 	robot.move_delta(dz = -robot.params['units_in_mm'][2] * 30)
 	goto_slot_rb(robot, x_n, y_n)
 	robot.move(z=expected_z)
 	robot.move_delta(dy=-robot.params['slot_height'] / 2)
-	west = find_wall(robot, "X", -1, "calibrate_pipettor-west")
+	west = find_wall(robot, "X", -1, "calibrate_circle_outer-west")
 
 	return [(east + west) / 2, (south + north) / 2]
 
