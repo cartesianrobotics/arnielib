@@ -12,6 +12,7 @@ TODO:
 13. Add checks like only calibrate if the stalactite is connected.
 14. Tip means both the tip of a tool and a plastic pipettor tip. Rename.
 15. Make a command for moving or removing tools. 
+16. Make a variable that tracks whether a pipettor has a tip on. 
 """
 	
 import serial
@@ -27,8 +28,8 @@ from shutil import copyfile
 import sys
 import glob
 
+message_level = "verbose"
 robots = []
-
 safe_height = 5900
 
 default_slot = {
@@ -257,8 +258,6 @@ class serial_device():
 		
 		Function will return an output message
 		"""
-		
-		self.idle = False
 		self.write(expression, eol)
 		
 		full_message = ""
@@ -267,11 +266,33 @@ class serial_device():
 			if message != "":
 				print("MESSAGE: " + repr(message))
 				full_message += message
-				if re.search(pattern="ok\n", string=full_message):
+				if re.search(pattern=confirm_message, string=full_message):
 					self.recent_message = full_message
 					break
 
 class pipettor(serial_device):
+	def write_wait(self, expression, confirm_message="Idle", eol=None):
+		"""
+		Function will write an expression to the device and wait for the proper response.
+		
+		Use this function to make the devise perform a physical operation and
+		make sure program continues after the operation is physically completed.
+		
+		Function will return an output message
+		"""
+		self.write(expression, eol)
+		
+		full_message = ""
+		while True:
+			message = self.readAll()
+			if message_level == "verbose":
+				print(message)
+			if message != "":
+				full_message += message
+				if re.search(pattern=confirm_message, string=full_message):
+					break
+			self.write("?")
+
 	def home(self):
 		self.write("$H")
 		self.readAll()
@@ -1308,6 +1329,54 @@ def approach_well(robot, x_n, y_n, well_x_n, well_y_n):
 
 	robot.move(x=dest_x, y=dest_y)
 	robot.move(z=dest_z)
+	
+def set_plunger_level(pipettor, level):
+	pipettor.write_wait("G0 X-" + str(level))
+
+def set_pipettor_speed(pipettor, speed):
+	pipettor.write_wait("$110=" + str(speed) + "\n")
+	
+# All pipetting functions assume that the pipettor tip hovers 2mm above the well, and return to that position at the end.
+def uptake(robot, x_n, y_n, expected_liquid_level, plunger_level, delay=0, speed=700):
+	# TODO: Calculate x_n and y_n from the position. 
+	# expected liquid level is the liquid level that is expected to be at the end (or higher).
+	u_mm = robot.params["units_in_mm"]
+	
+	rack_i = find_tool_i_by_coord(robot, x_n, y_n)
+	if rack_i == -1:
+		print("ERROR: No tool in slot (" + str(x_n) + ", " + str(y_n) + ").")
+		return
+		
+	rack = robot.tools[rack_i]
+	
+	if rack["type"] != "rack":
+		print("ERROR: The tool in  slot (" + str(x_n) + ", " + str(y_n) + ") is not a rack.")
+		return
+	
+	rack_type = rack["params"]["rack_type"]
+	
+	if rack_type == "96_well":	
+		tube_height = 21
+	elif rack_type == "eppendorf":
+		tube_height = 39
+	elif rack_type == "50_ml":
+		tube_height = 113
+	else:
+		print("ERROR: Unknown rack type: " + str(rack_type))
+		return
+	
+	pipettor = robot.current_tool_device
+	
+	drop = tube_height - expected_liquid_level + 2
+	
+	set_pipettor_speed(pipettor, speed)
+	set_plunger_level(pipettor, plunger_level)
+	robot.move_delta(dz = drop * u_mm[2])
+	set_plunger_level(pipettor, 0)
+	time.sleep(delay)
+	robot.move_delta(dz = -drop * u_mm[2])
+	
+	
 
 def get_liquid(robot, x_n, y_n, well_x_n, well_y_n):
 	pipettor = robot.current_tool_device
