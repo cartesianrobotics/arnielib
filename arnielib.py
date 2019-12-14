@@ -1337,7 +1337,7 @@ def set_pipettor_speed(pipettor, speed):
 	pipettor.write_wait("$110=" + str(speed) + "\n")
 	
 # All pipetting functions assume that the pipettor tip hovers 2mm above the well, and return to that position at the end.
-def uptake(robot, x_n, y_n, expected_liquid_level, plunger_level, delay=0, speed=700):
+def uptake_liquid(robot, x_n, y_n, expected_liquid_level, plunger_level, delay=0, speed=700):
 	# TODO: Calculate x_n and y_n from the position. 
 	# expected liquid level is the liquid level that is expected to be at the end (or higher).
 	u_mm = robot.params["units_in_mm"]
@@ -1376,7 +1376,45 @@ def uptake(robot, x_n, y_n, expected_liquid_level, plunger_level, delay=0, speed
 	time.sleep(delay)
 	robot.move_delta(dz = -drop * u_mm[2])
 	
+def release_liquid(robot, x_n, y_n, plunger_level, delay=0, speed=700):
+	# TODO: Calculate x_n and y_n from the position. 
+	# expected liquid level is the liquid level that is expected to be at the end (or higher).
+	u_mm = robot.params["units_in_mm"]
 	
+	rack_i = find_tool_i_by_coord(robot, x_n, y_n)
+	if rack_i == -1:
+		print("ERROR: No tool in slot (" + str(x_n) + ", " + str(y_n) + ").")
+		return
+		
+	rack = robot.tools[rack_i]
+	
+	if rack["type"] != "rack":
+		print("ERROR: The tool in  slot (" + str(x_n) + ", " + str(y_n) + ") is not a rack.")
+		return
+	
+	rack_type = rack["params"]["rack_type"]
+	
+	if rack_type == "96_well":	
+		tube_height = 21
+	elif rack_type == "eppendorf":
+		tube_height = 39
+	elif rack_type == "50_ml":
+		tube_height = 113
+	else:
+		print("ERROR: Unknown rack type: " + str(rack_type))
+		return
+	
+	pipettor = robot.current_tool_device
+	
+	drop = tube_height / 5 # CONSTANT
+	
+	set_pipettor_speed(pipettor, speed)
+	robot.move_delta(dz = drop * u_mm[2])
+	set_plunger_level(pipettor, plunger_level)
+	time.sleep(delay)
+	robot.move_delta(dz = -drop * u_mm[2])
+	set_plunger_level(pipettor, plunger_level + 5)
+	set_plunger_level(pipettor, 0)
 
 def get_liquid(robot, x_n, y_n, well_x_n, well_y_n):
 	pipettor = robot.current_tool_device
