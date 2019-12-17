@@ -2,10 +2,7 @@
 TODO:
 1. Make commands interruptable.
 2. Make a function for specifying tools. 
-3. Save tools in a file. 
 4. Make a function for swapping tools. 
-7. Make better serialization.
-8. Turn on the probe when connecting.
 10. Manual probe connection.
 11. Stalactite screw length calibration.
 12. Make things more mathematically reasonable.
@@ -294,6 +291,7 @@ class pipettor(serial_device):
 			self.write("?")
 
 	def home(self):
+		set_pipettor_speed(self, 400)
 		self.write("$H")
 		self.readAll()
 	
@@ -914,8 +912,9 @@ def calibrate_pipettor_tip(robot, x_n, y_n, initial_point=None):
 	
 	position = calibrate_tip(robot, x_n, y_n, stat_probe.isTouched, stalagmite_height_mm + 50, initial_point)
 	
-	tool_i = find_tool_i_by_type(robot, "pipettor")
-	robot.tools[tool_i]["tip"] =  position
+	# tool_i = find_tool_i_by_coord(robot, pip_x, pip_y)
+	# robot.tools[tool_i]["tip"] =  position
+	robot.current_tool["tip"] = position
 	update_tools(robot)
 
 def get_tool(robot, type, subtype=None, volume=None):
@@ -1224,6 +1223,60 @@ def test_tip_tray_calibration(robot, x_n, y_n):
 			time.sleep(7)
 
 def pickup_tip(robot, x_n, y_n, well_x_n, well_y_n):
+	# TODO: Step 1: check that the box in the slot (x_n, y_n) has the tips that the current pipettor takes. Step 2: Get rid of x_n, y_n, well_x_n, well_y_n and calculate everything automatically. 
+	slot = robot.params["slots"][x_n][y_n]
+	u_in_mm = robot.params["units_in_mm"]
+	tool_i = find_tool_i_by_coord(robot, x_n, y_n)
+	if tool_i == -1:
+		print("ERROR: No tool in slot (" + str(x_n) + ", " + str(y_n) + ").")
+		return
+		
+	tool = robot.tools[tool_i]
+	
+	if tool["type"] != "tip_tray":
+		print("ERROR: The tool in  slot (" + str(x_n) + ", " + str(y_n) + ") is not a tip tray.")
+		return
+	
+	stal_dest_x, stal_dest_y = calc_well_position(tool["params"], x_n, y_n, well_x_n, well_y_n, u_in_mm, "96_well")
+	
+	tray_volume = tool["params"]["volume"]
+	
+	if tray_volume == 1000:
+		approach_height = 95
+		dest_height = 82
+	elif tray_volume == 200:
+		approach_height = 60
+		dest_height = 49.5
+	elif tray_volume == 20:
+		approach_height = 60
+		dest_height = 40
+	else:
+		print("ERROR: Unknown volume: " + str(tray_volume))
+		return
+	
+	stal_appr_z = slot["floor_z"] - u_in_mm[2] * approach_height
+	stal_dest_z = slot["floor_z"] - u_in_mm[2] * dest_height
+	
+	pip_tip = robot.current_tool["tip"]
+	if pip_tip[0] < 0 or pip_tip[1] < 0 or pip_tip[2] < 0:
+		print("ERROR: Pipettor tip is not calibrated.")
+		return
+	
+	stal_i = find_tool_i_by_type(robot, "mobile_probe")
+	stal_tip = robot.tools[stal_i]["params"]["tip"]
+	
+	dest_x = stal_dest_x - stal_tip[0] + pip_tip[0]
+	dest_y = stal_dest_y - stal_tip[1] + pip_tip[1]
+	appr_z = stal_appr_z - stal_tip[2] + pip_tip[2]
+	dest_z = stal_dest_z - stal_tip[2] + pip_tip[2]
+	
+	robot.move(x=dest_x, y=dest_y)
+	robot.move(z=appr_z)
+	robot.move(z=dest_z, speed_z = 1000)
+	
+	robot.move_delta(dz = -100 * u_in_mm[2])
+
+def return_tip(robot, x_n, y_n, well_x_n, well_y_n):
 	slot = robot.params["slots"][x_n][y_n]
 	u_in_mm = robot.params["units_in_mm"]
 	tool_i = find_tool_i_by_coord(robot, x_n, y_n)
@@ -1244,10 +1297,10 @@ def pickup_tip(robot, x_n, y_n, well_x_n, well_y_n):
 	if tray_volume == 1000:
 		approach_height = 95
 		dest_height = 84
-	if tray_volume == 200:
+	elif tray_volume == 200:
 		approach_height = 60
 		dest_height = 49.5
-	if tray_volume == 20:
+	elif tray_volume == 20:
 		approach_height = 60
 		dest_height = 42
 	else:
@@ -1272,7 +1325,7 @@ def pickup_tip(robot, x_n, y_n, well_x_n, well_y_n):
 	
 	robot.move(x=dest_x, y=dest_y)
 	robot.move(z=appr_z)
-	robot.move(z=dest_z, speed_z = 1000)
+	robot.current_tool_device.drop_tip()
 	
 	robot.move_delta(dz = -100 * u_in_mm[2])
 
@@ -1333,7 +1386,7 @@ def approach_well(robot, x_n, y_n, well_x_n, well_y_n):
 	elif pipettor_volume == 200:
 		tip_height_mm = 42
 	elif pipettor_volume == 20:
-		tip_height_mm = 43
+		tip_height_mm = 32
 	else:
 		print("ERROR: Unknown pipettor type.")
 		return
@@ -1386,6 +1439,10 @@ def uptake_liquid(robot, x_n, y_n, expected_liquid_level, plunger_level, delay=0
 		print("ERROR: Unknown rack type: " + str(rack_type))
 		return
 	
+	if robot.current_tool["params"]["volume"] == 20:
+		if speed > 400:
+			speed = 400
+	
 	pipettor = robot.current_tool_device
 	
 	drop = (tube_height - expected_liquid_level + 2) * u_mm[2]
@@ -1423,14 +1480,20 @@ def release_liquid(robot, x_n, y_n, plunger_level, delay=0, speed=700):
 		tube_width = 10
 	elif rack_type == "50_ml":
 		tube_height = 113
-		tube_width = 0 # This is temporary.
+		tube_width = 27 # This is temporary.
 	else:
 		print("ERROR: Unknown rack type: " + str(rack_type))
 		return
 	
+	touch_wall_height_fraction = 1/5
+	if robot.current_tool["params"]["volume"] == 20:
+		touch_wall_height_fraction = 2/3
+		if speed > 400:
+			speed = 400
+	
 	pipettor = robot.current_tool_device
 	
-	drop = (tube_height / 4 + 2) * u_mm[2] # CONSTANT
+	drop = (tube_height * touch_wall_height_fraction + 2) * u_mm[2] # CONSTANT
 	touch_wall = tube_width * u_mm[1] * 3/4
 	
 	set_pipettor_speed(pipettor, speed)
@@ -1460,7 +1523,7 @@ def calibrate_volume(robot, source_x, source_y, dest_x, dest_y):
 			approach_well(robot, source_x, source_y, 0, 0)
 			uptake_liquid(robot, source_x, source_y, 50, plunger_level)
 			approach_well(robot, dest_x, dest_y, column_i, row_i)
-			release_liquid(robot, source_x, source_y, plunger_level)
+			release_liquid(robot, dest_x, dest_y, plunger_level)
 			robot.move_delta(dz = -150 * u_mm[2])
 			data_point_i += 1
 			if data_point_i == 4:
@@ -2030,6 +2093,7 @@ def connect():
 	
 	robot.current_device = None
 	robot.current_device_tool = None
+	robot.current_tool = None
 	
 	for device in available_devices:
 		if device.description["mobile"]:
