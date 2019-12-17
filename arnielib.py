@@ -315,6 +315,10 @@ class mobile_touch_probe(serial_device):
 		print("Mobile touch probe response: " + response)
 		return bool(int(re.split(pattern='/r/n', string=response)[0]))
 	
+class mobile_gripper(serial_device):
+	def open(self):
+		return
+	
 class stationary_touch_probe(serial_device):
 	def isTouched(self):
 		self.write('d')
@@ -533,7 +537,9 @@ class arnie(serial_device):
 		
 		for port in ports:
 			self.current_tool_device = connect_tool(port, self)
-			
+		
+		# TODO: Uncomment the following or write some other check for a device that couldn't connect. 
+		
 		#self.current_tool_device = 
 		
 		# Attempting to initialize the tool
@@ -561,6 +567,10 @@ class arnie(serial_device):
 		if self.current_tool["type"] == "pipettor":
 			self.current_tool_device.home()
 			time.sleep(5)
+
+		if self.current_tool["type"] == "mobile_gripper":
+			self.current_tool_device.write("1")
+			time.sleep(2)
 		
 		dest = self.current_tool["position"]
 		self.home("Z")
@@ -619,6 +629,7 @@ device_type_descriptions = [
 	{"class": stationary_touch_probe, "message": "stationary touch probe", "type": "stationary_probe", "mobile": False}, 
 	{"class": mobile_touch_probe, "message": "mobile touch probe", "type": "mobile_probe", "mobile": True},
 	{"class": pipettor, "message": "Servo", "type": "pipettor", "mobile": True},
+	{"class": mobile_gripper, "message": "mobile circular gripper", "type": "mobile_gripper", "mobile": True},
 	]
 
 def move_delta_mm(robot, dx=0, dy=0, dz=0):
@@ -803,9 +814,41 @@ def calibrate_mobile_probe_rack(robot, x_n, y_n):
 		
 	update_tools(robot)
 
+def calibrate_mobile_gripper(robot, x_n, y_n):
+	rack_height_mm = 44
+	expected_z = robot.params["slots"][x_n][y_n]["floor_z"] - ((rack_height_mm - 3) * robot.params["units_in_mm"][2])
+	
+	center = calibrate_circle_outer(robot, x_n, y_n, expected_z)
+	
+	# TODO: This bookkeeping has to happen after each tool calibration. Factor it out?	
+	tool = deepcopy(default_tool)
+	tool["position"][0] = center[0]
+	tool["position"][1] = center[1]
+	length_screw_mm = 33.9
+	stalactite_height = 147
+	tool_height = 160
+	tool["position"][2] = robot.params["slots"][x_n][y_n]["floor_z"] + (- tool_height + length_screw_mm + stalactite_height) * robot.params["units_in_mm"][2]
+	
+	tool["n_x"] = x_n
+	tool["n_y"] = y_n
+	slot = robot.params["slots"][x_n][y_n]
+	tool["slot"] = deepcopy(slot)
+	tool["type"] = "mobile_gripper"
+	tool["params"] = {}
+	
+	tool_i = find_tool_i_by_coord(robot, x_n, y_n)
+	if tool_i != -1:
+		robot.tools[tool_i] = tool
+	else:
+		robot.tools.append(tool)
+		
+	update_tools(robot)
+
 def calibrate_pipettor(robot, x_n, y_n, volume, pipettor_type):
 	pipettor_height_mm = 157
 	expected_z = robot.params["slots"][x_n][y_n]["floor_z"] - ((pipettor_height_mm - 3) * robot.params["units_in_mm"][2])
+	
+	# TODO: Replace all of this with a calibrate_circle_outer call. Like in calibrate_mobile_gripper. 
 	
 	robot.home("Z")
 	goto_slot_lt(robot, x_n, y_n)
@@ -2080,9 +2123,12 @@ def connect():
 			available_devices.append(device)
 
 	if robot == None:
-		print("ERROR: No robot detected.")
-		print(ports)
-		return
+		if len(robots) == 0:
+			print("ERROR: No robot detected.")
+			print(ports)
+			return
+		else: 
+			robot = robots[0]
 	
 	if os.path.exists("floor.json"):
 		load_floor(robot)
