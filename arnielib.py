@@ -1383,7 +1383,7 @@ def approach_well(robot, x_n, y_n, well_x_n, well_y_n):
 	if rack_i == -1:
 		print("ERROR: No tool in slot (" + str(x_n) + ", " + str(y_n) + ").")
 		return
-		
+	
 	rack = robot.tools[rack_i]
 	
 	if rack["type"] != "rack":
@@ -1411,38 +1411,46 @@ def approach_well(robot, x_n, y_n, well_x_n, well_y_n):
 		print("ERROR: No pipettor is attached.")
 		return
 	
-	pipettor = robot.current_tool
-	
-	if pipettor["type"] != "pipettor":
-		print("ERROR: Attached tool is not a pipettor.")
-		return
-	
-	pipettor_volume = pipettor["params"]["volume"]
-	pipettor_type = pipettor["params"]["pipettor_type"]
-	
-	if pipettor_type == "multi":
-		print("ERROR: This feature is under construction.")
-		return
-	
-	if pipettor_volume == 1000:
-		tip_height_mm = 76
-	elif pipettor_volume == 200:
-		tip_height_mm = 42
-	elif pipettor_volume == 20:
-		tip_height_mm = 32
-	else:
-		print("ERROR: Unknown pipettor type.")
-		return
-	
-	stal_dest_z = slot["floor_z"] - u_in_mm[2] * (dest_height + tip_height_mm)
-	
-	pip_tip = pipettor["tip"]
+	c_tool = robot.current_tool
 	stal_i = find_tool_i_by_type(robot, "mobile_probe")
-	stal_tip = robot.tools[stal_i]["params"]["tip"]
 	
-	dest_x = stal_dest_x - stal_tip[0] + pip_tip[0]
-	dest_y = stal_dest_y - stal_tip[1] + pip_tip[1]
-	dest_z = stal_dest_z - stal_tip[2] + pip_tip[2]
+	if c_tool["type"] == "pipettor":
+		pipettor_volume = c_tool["params"]["volume"]
+		pipettor_type = c_tool["params"]["pipettor_type"]
+		
+		if pipettor_type == "multi":
+			print("ERROR: This feature is under construction.")
+			return
+		
+		if pipettor_volume == 1000:
+			tip_height_mm = 76
+		elif pipettor_volume == 200:
+			tip_height_mm = 42
+		elif pipettor_volume == 20:
+			tip_height_mm = 32
+		else:
+			print("ERROR: Unknown pipettor type.")
+			return
+		
+		stal_dest_z = slot["floor_z"] - u_in_mm[2] * (dest_height + tip_height_mm)
+		
+		tool_tip = c_tool["tip"]
+		stal_tip = robot.tools[stal_i]["params"]["tip"]
+	elif c_tool["type"] == "mobile_gripper":
+		stal_tip = robot.tools[stal_i]["params"]["tip"]
+		tool_tip = deepcopy(stal_tip)
+		length_screw_mm = 33.9
+		stalactite_height = 147
+		tool_height = 160
+		tool_tip[2] += (-tool_height + length_screw_mm + stalactite_height) * u_in_mm[2]
+		stal_dest_z = slot["floor_z"] - u_in_mm[2] * (dest_height - 10)
+	else:
+		print("ERROR: Attached tool is not a pipettor or a gripper.")
+		return
+	
+	dest_x = stal_dest_x - stal_tip[0] + tool_tip[0]
+	dest_y = stal_dest_y - stal_tip[1] + tool_tip[1]
+	dest_z = stal_dest_z - stal_tip[2] + tool_tip[2]
 
 	robot.move(x=dest_x, y=dest_y)
 	robot.move(z=dest_z)
