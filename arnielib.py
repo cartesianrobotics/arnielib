@@ -1,15 +1,13 @@
 """
 TODO:
 1. Make commands interruptable.
-2. Make a function for specifying tools. 
-4. Make a function for swapping tools. 
-10. Manual probe connection.
-11. Stalactite screw length calibration.
-12. Make things more mathematically reasonable.
-13. Add checks like only calibrate if the stalactite is connected.
-14. Tip means both the tip of a tool and a plastic pipettor tip. Rename.
-15. Make a command for moving or removing tools. 
-16. Make a variable that tracks whether a pipettor has a tip on. 
+2. Make a function for swapping tools. 
+3. Stalactite screw length calibration.
+4. Make things more mathematically reasonable.
+5. Add checks like only calibrate if the stalactite is connected.
+6. Tip means both the tip of a tool and a plastic pipettor tip. Rename.
+7. Make a command for moving or removing tools. 
+8. Make a variable that tracks whether a pipettor has a tip on. 
 """
 	
 import serial
@@ -2146,7 +2144,7 @@ def connect():
 		load_tools(robot)
 	
 	robot.current_device = None
-	robot.current_device_tool = None
+	robot.current_tool_device = None
 	robot.current_tool = None
 	
 	for device in available_devices:
