@@ -8,6 +8,11 @@ TODO:
 6. Tip means both the tip of a tool and a plastic pipettor tip. Rename.
 7. Make a command for moving or removing tools. 
 8. Make a variable that tracks whether a pipettor has a tip on. 
+9. Lift it to a safe height instead of homing. Check functons that don't do it and add if needed. 
+10. Rename tool type into something else. 
+11. Check if the pipettor is locked after connection. 
+12. Update calibration of tools when stalactite tip is recalibrated. 
+13. Make a "move_units" function that moves in units and is only used for floor and ziggurat calibration. Make "move" take mm instead of units. 
 """
 
 """
@@ -50,7 +55,7 @@ default_tool = {
 	"slot": deepcopy(default_slot),
 	"n_x": -1,
 	"n_y": -1,
-	"type": None, # probe, pipettor, etc.
+	"type": None, # mobile_probe, pipettor, etc.
 	"position": [-1, -1, -1],
 	"tip": [-1, -1, -1],
 	"params": None
@@ -205,7 +210,7 @@ class serial_device():
 		try:
 			self.port.close()
 		except:
-			pass
+			print("ERROR: Couldn't close the port.")
 		
 	def write(self, expression, eol=None):
 		"""
@@ -255,6 +260,7 @@ class serial_device():
 		message_log(self.port_name, message, "read")
 		return message
 
+	# TODO: Rename this into "write", and rename "write"into "write_ignore_response".
 	def writeAndWait(self, expression, eol=None, confirm_message='ok\n'):
 		"""
 		Function will write an expression to the device and wait for the proper response.
@@ -277,6 +283,7 @@ class serial_device():
 					break
 
 class pipettor(serial_device):
+	# TODO: Factor this function out into serial_device.
 	def write_wait(self, expression, confirm_message="Idle", eol=None):
 		"""
 		Function will write an expression to the device and wait for the proper response.
@@ -301,20 +308,20 @@ class pipettor(serial_device):
 
 	def home(self):
 		set_pipettor_speed(self, 400)
-		self.write("$H")
+		self.write_wait("$H")
 		self.readAll()
 	
 	def drop_tip(self):
 		self.home()
-		self.write("M3 S90")
+		self.write_wait("M3 S90")
 		self.readAll()
-		self.write("M5")
+		self.write_wait("M5")
 		self.readAll()
-		self.write("G0 X-35")
+		self.write_wait("G0 X-35")
 		self.readAll()
-		self.write("G0 X0")
+		self.write_wait("G0 X0")
 		self.readAll()
-		self.write("M3 S90")
+		self.write_wait("M3 S90")
 		self.readAll()
 
 class mobile_touch_probe(serial_device):
@@ -365,7 +372,7 @@ class arnie(serial_device):
 			else:
 				self.writeAndWait('G28 '+axis)
 	
-	
+	# TODO: This function was messed up. Unmess it. 
 	def moveAxis(self, axis, destination, speed=None):
 		if destination == 0:
 			return 
@@ -1343,6 +1350,7 @@ def test_tip_tray_calibration(robot, x_n, y_n):
 
 def pickup_tip(robot, x_n, y_n, well_x_n, well_y_n):
 	# TODO: Step 1: check that the box in the slot (x_n, y_n) has the tips that the current pipettor takes. Step 2: Get rid of x_n, y_n, well_x_n, well_y_n and calculate everything automatically. 
+	# TODO: Lift to a safe height.
 	slot = robot.params["slots"][x_n][y_n]
 	u_in_mm = robot.params["units_in_mm"]
 	tool_i = find_tool_i_by_coord(robot, x_n, y_n)
@@ -1582,6 +1590,8 @@ def uptake_liquid(robot, x_n, y_n, expected_liquid_level, plunger_level, delay=0
 	robot.move_delta(dz = -drop)
 	
 def release_liquid(robot, x_n, y_n, plunger_level, delay=0, speed=700):
+	# TODO: Specify how deep to descend in a separate parameter. 
+	# TODO: Specify which wall to touch (if any) in a parameter. 
 	# TODO: Calculate x_n and y_n from the position. 
 	# expected liquid level is the liquid level that is expected to be at the end (or higher).
 	u_mm = robot.params["units_in_mm"]
@@ -1684,7 +1694,7 @@ def check_rack_calibration(robot, x_n, y_n):
 	tool_i = find_tool_i_by_coord(robot, x_n, y_n)
 	if tool_i == -1:
 		print("ERROR: No tool in slot (" + str(x_n) + ", " + str(y_n) + ").")
-		return
+		return	
 		
 	tool = robot.tools[tool_i]
 	
@@ -1693,7 +1703,6 @@ def check_rack_calibration(robot, x_n, y_n):
 		return
 	
 	robot.home("Z")
-	goto_slot_lt(robot, x_n, y_n)
 	
 	for column_i in range(tool["params"]["width_n"]):
 		for row_i in range(tool["params"]["height_n"]):
@@ -2221,6 +2230,7 @@ def connect():
 	if os.path.exists("tools.json"):
 		load_tools(robot)
 	
+	# TODO: current_device is never used. Rename current_tool_device into current_device.
 	robot.current_device = None
 	robot.current_tool_device = None
 	robot.current_tool = None
