@@ -332,8 +332,8 @@ class mobile_touch_probe(serial_device):
 		return bool(int(re.split(pattern='/r/n', string=response)[0]))
 	
 class mobile_gripper(serial_device):
-	def open(self):
-		return
+	def set_level(self, level):
+		self.write(str(level))
 	
 class stationary_touch_probe(serial_device):
 	def isTouched(self):
@@ -1455,6 +1455,27 @@ def return_tip(robot, x_n, y_n, well_x_n, well_y_n):
 	robot.current_tool_device.drop_tip()
 	
 	robot.move_delta(dz = -100 * u_in_mm[2])
+
+def move_tube(robot, source_x, source_y, source_well_x, source_well_y, dest_x, dest_y, dest_well_x, dest_well_y):
+	u_mm = robot.params["units_in_mm"]
+	gripper = robot.current_tool_device
+	if robot.current_tool["type"] != "mobile_gripper":
+		print("ERROR: Current tool is not a gripper.")
+		return
+		
+	# TODO: Right now this only works for eppendorf tubes. Make it work for other types. 
+	
+	robot.move(z=u_mm[2] * 10)
+	approach_well(robot, source_x, source_y, source_well_x, source_well_y)
+	gripper.set_level(30)
+	
+	robot.move(z=u_mm[2] * 10)
+	approach_well(robot, dest_x, dest_y, dest_well_x, dest_well_y)
+	gripper..set_level(100)
+	
+	robot.move(z=u_mm[2] * 10)
+	
+	
 
 # Positions the tip of the pipettor 2mm above the well. 
 # Assumes that the robot is within safe region from the well. 
