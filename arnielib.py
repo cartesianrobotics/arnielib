@@ -1562,7 +1562,7 @@ def uptake_liquid(robot, x_n, y_n, expected_liquid_level, plunger_level, delay=0
 	
 	rack_type = rack["params"]["rack_type"]
 
-	tube_height = rack_dist[rack_type]["tube_height"]
+	tube_height = rack_dict[rack_type]["tube_height"]
 		
 	if robot.current_tool["params"]["volume"] == 20:
 		if speed > 400:
@@ -1599,8 +1599,8 @@ def release_liquid(robot, x_n, y_n, plunger_level, delay=0, speed=700):
 	
 	rack_type = rack["params"]["rack_type"]
 	
-	tube_height = rack_dist[rack_type]["tube_height"]
-	tube_width = rack_dist[rack_type]["tube_width"]
+	tube_height = rack_dict[rack_type]["tube_height"]
+	tube_width = rack_dict[rack_type]["tube_width"]
 	
 	touch_wall_height_fraction = 1/5
 	if robot.current_tool["params"]["volume"] == 20:
