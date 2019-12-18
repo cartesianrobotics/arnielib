@@ -13,6 +13,7 @@ TODO:
 11. Check if the pipettor is locked after connection. 
 12. Update calibration of tools when stalactite tip is recalibrated. 
 13. Make a "move_units" function that moves in units and is only used for floor and ziggurat calibration. Make "move" take mm instead of units. 
+14. Pre-home routine for tools
 """
 
 """
@@ -23,7 +24,8 @@ Sequence of operations to add a new rack
 3. Need to calibrate it (it is not really rectangular, that complicates things)
 4. Edit function "calibrate_rack", by adding a rack into if statements
 	For custom racks, make sure you provide custom offsets and custom deltas.
-5. Add wells addressing for the new rack. Go to function "calc_well_position"
+5. Add wells addressing for the new rack. Go to function "calc_well_position"'
+6. Add tube height above rack to approach_well
 """
 	
 import serial
@@ -332,7 +334,7 @@ class mobile_touch_probe(serial_device):
 		return bool(int(re.split(pattern='/r/n', string=response)[0]))
 	
 class mobile_gripper(serial_device):
-	def set_level(self, level):
+	def operate_gripper(self, level):
 		self.write(str(level))
 	
 class stationary_touch_probe(serial_device):
@@ -1464,14 +1466,17 @@ def move_tube(robot, source_x, source_y, source_well_x, source_well_y, dest_x, d
 		return
 		
 	# TODO: Right now this only works for eppendorf tubes. Make it work for other types. 
+	gripper.operate_gripper(100)
 	
 	robot.move(z=u_mm[2] * 10)
 	approach_well(robot, source_x, source_y, source_well_x, source_well_y)
-	gripper.set_level(30)
+	gripper.operate_gripper(30)
+	time.sleep(2)
 	
 	robot.move(z=u_mm[2] * 10)
 	approach_well(robot, dest_x, dest_y, dest_well_x, dest_well_y)
-	gripper..set_level(100)
+	gripper.operate_gripper(100)
+	time.sleep(2)
 	
 	robot.move(z=u_mm[2] * 10)
 	
@@ -1503,6 +1508,8 @@ def approach_well(robot, x_n, y_n, well_x_n, well_y_n):
 		tube_height_above_rack = 13
 	elif rack_type == "50_ml":
 		tube_height_above_rack = 21
+	elif rack_type == "magnetic_eppendorf":
+		tube_height_above_rack = 13
 	else:
 		print("ERROR: Unknown rack type: " + str(rack_type))
 		return
