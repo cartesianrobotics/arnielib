@@ -1,6 +1,6 @@
 """
 TODO:
-1. Make commands interruptable.
+1. Make commands interruptable. - Need electronics powerful enough, and firmware that supports it.
 2. Make a function for swapping tools. 
 3. Stalactite screw length calibration.
 4. Make things more mathematically reasonable.
@@ -14,6 +14,8 @@ TODO:
 12. Update calibration of tools when stalactite tip is recalibrated. 
 13. Make a "move_units" function that moves in units and is only used for floor and ziggurat calibration. Make "move" take mm instead of units. 
 14. Pre-home routine for tools
+15. Sometimes "connect" function fails returning error when checking for the device list. Need to be fixed
+16. Add function that allows to enter a new rack without edditinng the library.
 """
 
 """
@@ -21,7 +23,7 @@ Sequence of operations to add a new rack
 12/17/2019, adding a new magnetic rack for 1.7 mL Eppendorf tubes
 1. Creating a new type in "rack_dict" and add the measurements.
 2. Need to calibrate it (if it is not rectangular, that complicates things).
-3. For custom racks, make sure you provide custom offsets and custom deltas in the function function "calibrate_rack".
+3. For custom racks, make sure you provide custom offsets and custom deltas in the function "calibrate_rack".
 """
 	
 import serial
@@ -62,7 +64,7 @@ default_tool = {
 rack_types = ["96_well", "eppendorf", "50_ml", "magnetic_eppendorf"]
 rack_dict = {
 	"96_well": {"rack_height": 16, "n_columns": 12, "n_rows": 8, "dist_between_wells_x": 9, "dist_between_wells_y": 9, "dist_center_to_well_00": [49.5, 31.5], "tube_height_above_rack": 10, "tube_height": 21, "tube_width": 6},
-	"eppendorf": {"rack_height": 25, "n_columns": 8, "n_rows": 4, "dist_between_wells_x": 17, "dist_between_wells_y": 23, "dist_center_to_well_00": [59.5, 28], "tube_height_above_rack": 13, "tube_height": 39, "tube_width": 10},
+	"eppendorf": {"rack_height": 94, "n_columns": 8, "n_rows": 4, "dist_between_wells_x": 17, "dist_between_wells_y": 23, "dist_center_to_well_00": [59.5, 28], "tube_height_above_rack": 13, "tube_height": 39, "tube_width": 10},
 	"50_ml": {"rack_height": 94, "n_columns": 3, "n_rows": 2, "dist_between_wells_x": 50, "dist_between_wells_y": 50, "dist_center_to_well_00": [50, 25], "tube_height_above_rack": 21, "tube_height": 113, "tube_width": 27},
 	"magnetic_eppendorf": {"rack_height": 34.4, "n_columns": 8, "n_rows": 2, "dist_between_wells_x": 15, "dist_between_wells_y": 80.6, "dist_center_to_well_00": [52.5, 34.8], "tube_height_above_rack": 13, "tube_height": 39, "tube_width": 10},
 	}
