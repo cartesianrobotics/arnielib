@@ -62,9 +62,14 @@ default_tool = {
 	"tip": [-1, -1, -1],
 	"params": None
 }
-
+	
 rack_types = ["96_well", "eppendorf", "50_ml", "magnetic_eppendorf"]
-rack_heights = {"96_well": 16, "eppendorf": 25, "50_ml": 94, "magnetic_eppendorf":34.4}
+rack_dict = [
+	"96_well": {"rack_height": 16, "n_columns": 12, "n_rows": 8, "dist_between_wells_x": 9, "dist_between_wells_y": 9, "dist_center_to_well_00": [49.5, 31.5], "tube_height_above_rack": 10, "tube_height": 21, "tube_width": 6},
+	"eppendorf": {"rack_height": 25, "n_columns": 8, "n_rows": 4, "dist_between_wells_x": 17, "dist_between_wells_y": 23, "dist_center_to_well_00": [59.5, 28], "tube_height_above_rack": 13, "tube_height": 39, "tube_width": 10},
+	"50_ml": {"rack_height": 94, "n_columns": 3, "n_rows": 2, "dist_between_wells_x": 50, "dist_between_wells_y": 50, "dist_center_to_well_00": [50, 25], "tube_height_above_rack": 21, "tube_height": 113, "tube_width": 27},
+	"magnetic_eppendorf": {"rack_height": 34.4, "n_columns": 8, "n_rows": 2, "dist_between_wells_x": 15, "dist_between_wells_y": 80.6, "dist_center_to_well_00": [52.5, 34.8], "tube_height_above_rack": 13, "tube_height": 39, "tube_width": 10}
+	]
 
 pipettor_volumes = [1000, 200, 20]
 pipettor_types = ["single", "multi"]
@@ -1188,7 +1193,7 @@ def calibrate_rack(robot, x_n, y_n, rack_type):
 	robot.home("Z")
 	goto_slot_lt(robot, x_n, y_n)
 	
-	rack_level = slot["floor_z"] - u_mm[2] * (rack_heights[rack_type] - 2)
+	rack_level = slot["floor_z"] - u_mm[2] * (rack_dict[rack_type]["rack_height"] - 2)
 	
 	# Parameters used to calculate at which point to perform measurement 
 	# relative to the vertices of a slot where rack is positioned
@@ -1203,21 +1208,11 @@ def calibrate_rack(robot, x_n, y_n, rack_type):
 	# In robot units, not mm.
 	deltaX = 0
 	deltaY = 0
+
+	n_columns = rack_dict[rack_type]["n_columns"]
+	n_rows = rack_dict[rack_type]["n_rows"]
 	
-	# Checking what type of rack is there
-	# If adding a new rack, you have to add it here.
-	if rack_type == "96_well":
-		n_columns = 12
-		n_rows = 8	
-	elif rack_type == "eppendorf":
-		n_columns = 8
-		n_rows = 4
-	elif rack_type == "50_ml":
-		n_columns = 3
-		n_rows = 2
-	elif rack_type == "magnetic_eppendorf":
-		n_columns = 8
-		n_rows = 2
+	if rack_type == "magnetic_eppendorf":
 		# This rack has custom offsets for calibration
 		Y_offset_frac = 7.0
 		deltaX = -45 * u_mm[0]
@@ -1289,27 +1284,13 @@ def calc_well_position(rect, x_n, y_n, well_x_n, well_y_n, u_mm, rack_type="96_w
 	# TODO: More precise positioning that takes skewness into account.
 	rack_center = [(west1 + east1 + west2 + east2) / 4, (north1 + south1 + north2 + south2) / 4]
 	
-	if rack_type == "96_well":
-		well_width = 9 * u_mm[0]
-		well_height = 9 * u_mm[1]
-		first_well = [rack_center[0] - well_width * 11 / 2, rack_center[1] - well_height * 7 / 2]
-	elif rack_type == "eppendorf":
-		well_width = 17 * u_mm[0]
-		well_height = 23 * u_mm[1]
-		first_well = [rack_center[0] - 59.5 * u_mm[0], rack_center[1] - 28 * u_mm[1]]
-	elif rack_type == "50_ml":
-		well_width = 50 * u_mm[0]
-		well_height = 50 * u_mm[1]
-		first_well = [rack_center[0] - well_width, rack_center[1] - well_height * 1 / 2]
-	elif rack_type == "magnetic_eppendorf":
-		well_width = 15 * u_mm[0]
-		well_height = 80.6 * u_mm[1]
-		first_well = [rack_center[0] - 52.5 * u_mm[0], rack_center[1] - 34.8 * u_mm[1]]
-	else: 
-		print("ERROR: Unknown rack type:" + str(rack_type) + ".")
+	dist_between_wells_x = rack_dict[rack_type]["dist_between_wells_x"] * u_mm[0]
+	dist_between_wells_y = rack_dict[rack_type]["dist_between_wells_y"] * u_mm[1]
+	well_00_x = rack_center[0] - rack_dict[rack_type]["dist_center_to_well_00"][0] * u_mm[0]
+	well_00_y = rack_center[1] - rack_dict[rack_type]["dist_center_to_well_00"][1] * u_mm[1]
 
-	dest_x = first_well[0] + well_x_n * well_width
-	dest_y = first_well[1] + well_y_n * well_height
+	dest_x = well_00_x + well_x_n * dist_between_wells_x
+	dest_y = well_00_y + well_y_n * dist_between_wells_y
 	
 	return [dest_x, dest_y]
 
@@ -1502,22 +1483,11 @@ def approach_well(robot, x_n, y_n, well_x_n, well_y_n):
 	
 	rack_type = rack["params"]["rack_type"]
 	
-	if rack_type == "96_well":
-		tube_height_above_rack = 10
-	elif rack_type == "eppendorf":
-		tube_height_above_rack = 13
-	elif rack_type == "50_ml":
-		tube_height_above_rack = 21
-	elif rack_type == "magnetic_eppendorf":
-		tube_height_above_rack = 13
-	else:
-		print("ERROR: Unknown rack type: " + str(rack_type))
-		return
-
+	tube_height_above_rack = rack_dict[rack_type]["tube_height_above_rack"]
 	
 	stal_dest_x, stal_dest_y = calc_well_position(rack["params"], x_n, y_n, well_x_n, well_y_n, u_in_mm, rack_type)
 	
-	dest_height = tube_height_above_rack + rack_heights[rack_type] + 2
+	dest_height = tube_height_above_rack + rack_dict[rack_type]["rack_height"] + 2
 	
 	if robot.current_tool == None:
 		print("ERROR: No pipettor is attached.")
@@ -1591,17 +1561,9 @@ def uptake_liquid(robot, x_n, y_n, expected_liquid_level, plunger_level, delay=0
 		return
 	
 	rack_type = rack["params"]["rack_type"]
-	
-	if rack_type == "96_well":	
-		tube_height = 21
-	elif rack_type == "eppendorf":
-		tube_height = 39
-	elif rack_type == "50_ml":
-		tube_height = 113
-	else:
-		print("ERROR: Unknown rack type: " + str(rack_type))
-		return
-	
+
+	tube_height = rack_dist[rack_type]["tube_height"]
+		
 	if robot.current_tool["params"]["volume"] == 20:
 		if speed > 400:
 			speed = 400
@@ -1637,18 +1599,8 @@ def release_liquid(robot, x_n, y_n, plunger_level, delay=0, speed=700):
 	
 	rack_type = rack["params"]["rack_type"]
 	
-	if rack_type == "96_well":	
-		tube_height = 21
-		tube_width = 6
-	elif rack_type == "eppendorf":
-		tube_height = 39
-		tube_width = 10
-	elif rack_type == "50_ml":
-		tube_height = 113
-		tube_width = 27 # This is temporary.
-	else:
-		print("ERROR: Unknown rack type: " + str(rack_type))
-		return
+	tube_height = rack_dist[rack_type]["tube_height"]
+	tube_width = rack_dist[rack_type]["tube_width"]
 	
 	touch_wall_height_fraction = 1/5
 	if robot.current_tool["params"]["volume"] == 20:
