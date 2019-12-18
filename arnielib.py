@@ -2180,6 +2180,12 @@ def connect_tool(port_name, robot=None):
 			robot.tool_devices.append(device)
 	
 	if device.__class__ == pipettor:
+		# Sergii, 12/17/2019
+		# Quick fix for the "Alarm" error after picking up the tool,
+		# Which hangs the operation and prevents homing from succeeding
+		device.write("$X")
+		device.write("G0 X-5")
+		# Homing the pipettor
 		device.home()
 	
 	return device
