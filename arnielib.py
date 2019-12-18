@@ -1884,7 +1884,7 @@ def ziggurat_calibration(robot, x_n, y_n):
 	
 	update_floor(robot)
 
-def calibrate(robot):
+def calibrate_floor(robot):
 	if robot.current_tool["type"] != "stationary_probe": 
 		print("ERROR: No probe connected.")
 		return
