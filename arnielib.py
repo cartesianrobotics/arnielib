@@ -64,12 +64,12 @@ default_tool = {
 }
 	
 rack_types = ["96_well", "eppendorf", "50_ml", "magnetic_eppendorf"]
-rack_dict = [
+rack_dict = {
 	"96_well": {"rack_height": 16, "n_columns": 12, "n_rows": 8, "dist_between_wells_x": 9, "dist_between_wells_y": 9, "dist_center_to_well_00": [49.5, 31.5], "tube_height_above_rack": 10, "tube_height": 21, "tube_width": 6},
 	"eppendorf": {"rack_height": 25, "n_columns": 8, "n_rows": 4, "dist_between_wells_x": 17, "dist_between_wells_y": 23, "dist_center_to_well_00": [59.5, 28], "tube_height_above_rack": 13, "tube_height": 39, "tube_width": 10},
 	"50_ml": {"rack_height": 94, "n_columns": 3, "n_rows": 2, "dist_between_wells_x": 50, "dist_between_wells_y": 50, "dist_center_to_well_00": [50, 25], "tube_height_above_rack": 21, "tube_height": 113, "tube_width": 27},
-	"magnetic_eppendorf": {"rack_height": 34.4, "n_columns": 8, "n_rows": 2, "dist_between_wells_x": 15, "dist_between_wells_y": 80.6, "dist_center_to_well_00": [52.5, 34.8], "tube_height_above_rack": 13, "tube_height": 39, "tube_width": 10}
-	]
+	"magnetic_eppendorf": {"rack_height": 34.4, "n_columns": 8, "n_rows": 2, "dist_between_wells_x": 15, "dist_between_wells_y": 80.6, "dist_center_to_well_00": [52.5, 34.8], "tube_height_above_rack": 13, "tube_height": 39, "tube_width": 10},
+	}
 
 pipettor_volumes = [1000, 200, 20]
 pipettor_types = ["single", "multi"]
