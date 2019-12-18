@@ -19,13 +19,9 @@ TODO:
 """
 Sequence of operations to add a new rack
 12/17/2019, adding a new magnetic rack for 1.7 mL Eppendorf tubes
-1. Creating a new type in "rack_types"
-2. Physically check its height (in mm) and write it to "rack_heights"
-3. Need to calibrate it (it is not really rectangular, that complicates things)
-4. Edit function "calibrate_rack", by adding a rack into if statements
-	For custom racks, make sure you provide custom offsets and custom deltas.
-5. Add wells addressing for the new rack. Go to function "calc_well_position"'
-6. Add tube height above rack to approach_well
+1. Creating a new type in "rack_dict" and add the measurements.
+2. Need to calibrate it (if it is not rectangular, that complicates things).
+3. For custom racks, make sure you provide custom offsets and custom deltas in the function function "calibrate_rack".
 """
 	
 import serial
@@ -1888,7 +1884,7 @@ def ziggurat_calibration(robot, x_n, y_n):
 	
 	update_floor(robot)
 
-def calibrate(robot):
+def calibrate_floor(robot):
 	if robot.current_tool["type"] != "stationary_probe": 
 		print("ERROR: No probe connected.")
 		return
