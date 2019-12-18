@@ -9,6 +9,17 @@ TODO:
 7. Make a command for moving or removing tools. 
 8. Make a variable that tracks whether a pipettor has a tip on. 
 """
+
+"""
+Sequence of operations to add a new rack
+12/17/2019, adding a new magnetic rack for 1.7 mL Eppendorf tubes
+1. Creating a new type in "rack_types"
+2. Physically check its height (in mm) and write it to "rack_heights"
+3. Need to calibrate it (it is not really rectangular, that complicates things)
+4. Edit function "calibrate_rack", by adding a rack into if statements
+	For custom racks, make sure you provide custom offsets and custom deltas.
+5. Add wells addressing for the new rack. Go to function "calc_well_position"
+"""
 	
 import serial
 import time
@@ -45,8 +56,8 @@ default_tool = {
 	"params": None
 }
 
-rack_types = ["96_well", "eppendorf", "50_ml"]
-rack_heights = {"96_well": 16, "eppendorf": 25, "50_ml": 94}
+rack_types = ["96_well", "eppendorf", "50_ml", "magnetic_eppendorf"]
+rack_heights = {"96_well": 16, "eppendorf": 25, "50_ml": 94, "magnetic_eppendorf":34.4}
 
 pipettor_volumes = [1000, 200, 20]
 pipettor_types = ["single", "multi"]
@@ -1028,7 +1039,34 @@ def rectangle_center_2(rect):
 	center_y = (rect[0] + rect[1] + rect[4] + rect[5]) / 4
 	return [center_x, center_y]
 
-def calibrate_rectangle(robot, rect, safe_height, measure_height, name):
+def calibrate_rectangle(robot, rect, safe_height, measure_height, name="Default name", X_offset_frac=3.0, Y_offset_frac=3.0):
+	"""
+	Calibrates any rectangular object. Returns list of 8 parameters:
+		north1, north2 - "Y" values of furthest side of the rectangle
+		east1, east2 - "X" values of rightmost side of the rectanlge
+		south1, south2 - "Y" values of nearest side of the rectangle
+		west1, west2 - "X" values of leftmost side of the rectanlge
+		
+		For the record, left side is closer to the "home" position than right side
+		"firthest" is closer to the "home" than "nearest"; "nearest" is closer to observer
+		
+	Robot assumed to be already positioned above the needed slot.
+		
+	Parameters:
+		robot - robot instance
+		rect - dictionary that contains parameters of the rectangle to calibrate
+			"LT" - coordinates of left top vertex of the rectangle, [x, y]
+			"LB" - coordinates of left bottom side of the rectangle, [x, y]
+			"RT" - coordinates of right top side of the rectangle, [x, y]
+			"RB" - coordinates of right bottom side of the rectangle, [x, y]
+			Slot is the rectangle on the floor, where a rack may be positioned
+			Slots are calibrated initially using "calibrate"
+			For exampple, slot parameters may be used  as starting parameters (but not necessary)
+		safe_height - height at which robot won't hit anything within a given slot
+		measure_height - height at which actual measurement must be taken with stalaktite
+		name - Name used to write measurements into log (does not affect anything)
+	"""
+	
 	lt = rect["LT"]
 	lb = rect["LB"]
 	rt = rect["RT"]
@@ -1037,34 +1075,38 @@ def calibrate_rectangle(robot, rect, safe_height, measure_height, name):
 	rect_height = ((lb[1] - lt[1]) + (rb[1] - rt[1])) / 2
 
 	robot.move(z=safe_height)
-	robot.move(x=lt[0] + rect_width / 3, y=lt[1])
+	robot.move(x=lt[0] + rect_width / X_offset_frac, y=lt[1])
 	robot.move(z=measure_height)
 	north1 = find_wall(robot, "Y", 1, name + "calibrate_rectangle-north1")
-	robot.move_delta(dx=rect_width / 3)
+	robot.move(x=rt[0] - rect_width / X_offset_frac, y=rt[1])
+	#robot.move_delta(dx=rect_width / 3)
 	north2 = find_wall(robot, "Y", 1, name + "calibrate_rectangle-north2")
 	
 	# I wanted to calibrate the height of the rack here, but then decided to do it in the center. 
 	# find_wall_end(robot, "Y", 1, "Z", -1, 10 * robot.params["units_in_mm"][2], name="calibrate_rectangle-north")
 	
 	robot.move(z=safe_height)
-	robot.move(x=rt[0], y=rt[1] + rect_height / 3)
+	robot.move(x=rt[0], y=rt[1] + rect_height / Y_offset_frac)
 	robot.move(z=measure_height)
 	east1 = find_wall(robot, "X", -1, name + "calibrate_rectangle-east1")
-	robot.move_delta(dy=rect_height / 3)
+	robot.move(x=rb[0], y=rb[1] - rect_height / Y_offset_frac)
+	#robot.move_delta(dy=rect_height / 3)
 	east2 = find_wall(robot, "X", -1, name + "calibrate_rectangle-east2")
 
 	robot.move(z=safe_height)
-	robot.move(x=rb[0] - rect_width / 3, y=rb[1])
+	robot.move(x=rb[0] - rect_width / X_offset_frac, y=rb[1])
 	robot.move(z=measure_height)
 	south2 = find_wall(robot, "Y", -1, name + "calibrate_rectangle-south2")
-	robot.move_delta(dx=-rect_width / 3)
+	robot.move(x=lb[0] + rect_width / X_offset_frac, y=lb[1])
+	#robot.move_delta(dx=-rect_width / 3)
 	south1 = find_wall(robot, "Y", -1, name + "calibrate_rectangle-south1")
 	
 	robot.move(z=safe_height)
-	robot.move(x=lb[0], y=lb[1] - rect_height / 3)
+	robot.move(x=lb[0], y=lb[1] - rect_height / Y_offset_frac)
 	robot.move(z=measure_height)
 	west2 = find_wall(robot, "X", 1, name + "calibrate_rectangle-west2")
-	robot.move_delta(dy=-rect_height / 3)
+	robot.move(x=lt[0], y=lt[1] + rect_height / Y_offset_frac)
+	#robot.move_delta(dy=-rect_height / 3)
 	west1 = find_wall(robot, "X", 1, name + "calibrate_rectangle-west1")
 	robot.move(z=safe_height)
 	
@@ -1139,6 +1181,22 @@ def calibrate_rack(robot, x_n, y_n, rack_type):
 	
 	rack_level = slot["floor_z"] - u_mm[2] * (rack_heights[rack_type] - 2)
 	
+	# Parameters used to calculate at which point to perform measurement 
+	# relative to the vertices of a slot where rack is positioned
+	# Higher the number, the closer to the vertices robot will calibrate.
+	X_offset_frac = 3.0
+	Y_offset_frac = 3.0
+	
+	# Parameters used to calculate at which point to measure Z
+	# By default, Z is measured at the center of a rack, after X and Y are calculated
+	# Here are deltas to add to the center coordinates, so the height of a rack is calculated 
+	# not at the center
+	# In robot units, not mm.
+	deltaX = 0
+	deltaY = 0
+	
+	# Checking what type of rack is there
+	# If adding a new rack, you have to add it here.
 	if rack_type == "96_well":
 		n_columns = 12
 		n_rows = 8	
@@ -1148,14 +1206,30 @@ def calibrate_rack(robot, x_n, y_n, rack_type):
 	elif rack_type == "50_ml":
 		n_columns = 3
 		n_rows = 2
+	elif rack_type == "magnetic_eppendorf":
+		n_columns = 8
+		n_rows = 2
+		# This rack has custom offsets for calibration
+		Y_offset_frac = 7.0
+		deltaX = -45 * u_mm[0]
+		deltaY = -46 * u_mm[1]
 		
+	
+	# Recalculating mm into robot units
 	rack_safe_height = rack_level - 100 * u_mm[2]
 	
-	north1, north2, east1, east2, south1, south2, west1, west2 = calibrate_rectangle(robot, robot.params["slots"][x_n][y_n], rack_safe_height, rack_level, "calibrate_rack-")
+	north1, north2, east1, east2, south1, south2, west1, west2 = calibrate_rectangle(
+		robot, 
+		robot.params["slots"][x_n][y_n], 
+		rack_safe_height, 
+		rack_level, 
+		"calibrate_rack-",
+		X_offset_frac=X_offset_frac,
+		Y_offset_frac=Y_offset_frac)
 
 	rack_center = [(west1 + east1 + west2 + east2) / 4, (north1 + south1 + north2 + south2) / 4]
 
-	robot.move(x = rack_center[0], y = rack_center[1])
+	robot.move(x = rack_center[0]+deltaX, y = rack_center[1]+deltaY)
 	rack_height = find_wall(robot, "Z", 1, "calibrate_rack-rack_center")
 	robot.move(z=rack_height)
 	
@@ -1218,6 +1292,10 @@ def calc_well_position(rect, x_n, y_n, well_x_n, well_y_n, u_mm, rack_type="96_w
 		well_width = 50 * u_mm[0]
 		well_height = 50 * u_mm[1]
 		first_well = [rack_center[0] - well_width, rack_center[1] - well_height * 1 / 2]
+	elif rack_type == "magnetic_eppendorf":
+		well_width = 15 * u_mm[0]
+		well_height = 80.6 * u_mm[1]
+		first_well = [rack_center[0] - 52.5 * u_mm[0], rack_center[1] - 34.8 * u_mm[1]]
 	else: 
 		print("ERROR: Unknown rack type:" + str(rack_type) + ".")
 
