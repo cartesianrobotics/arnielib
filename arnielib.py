@@ -1687,7 +1687,8 @@ def goto_rack_well(robot, x_n, y_n, well_x_n, well_y_n):
 	dest_x, dest_y = calc_well_position(tool["params"], x_n, y_n, well_x_n, well_y_n, u_mm, rack_type)
 	dest_z = tool["params"]["height"] - 1 * u_mm[2]
 	
-	robot.move(x=dest_x, y=dest_y, z=dest_z)
+	robot.move(x=dest_x, y=dest_y)
+	robot.move(z=dest_z)
 
 # Makes the stalactite visit the center of every well of a rack. 
 def check_rack_calibration(robot, x_n, y_n):
