@@ -12,6 +12,7 @@ TODO:
 10. Rename tool type into something else. 
 11. Check if the pipettor is locked after connection. 
 12. Update calibration of tools when stalactite tip is recalibrated. 
+13. Make a "move_units" function that moves in units and is only used for floor and ziggurat calibration. Make "move" take mm instead of units. 
 """
 	
 import serial
@@ -1615,7 +1616,7 @@ def check_rack_calibration(robot, x_n, y_n):
 	tool_i = find_tool_i_by_coord(robot, x_n, y_n)
 	if tool_i == -1:
 		print("ERROR: No tool in slot (" + str(x_n) + ", " + str(y_n) + ").")
-		return
+		return	
 		
 	tool = robot.tools[tool_i]
 	
@@ -1624,7 +1625,6 @@ def check_rack_calibration(robot, x_n, y_n):
 		return
 	
 	robot.home("Z")
-	goto_slot_lt(robot, x_n, y_n)
 	
 	for column_i in range(tool["params"]["width_n"]):
 		for row_i in range(tool["params"]["height_n"]):
