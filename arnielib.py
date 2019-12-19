@@ -16,6 +16,7 @@ TODO:
 14. Pre-home routine for tools
 15. Sometimes "connect" function fails returning error when checking for the device list. Need to be fixed
 16. Add function that allows to enter a new rack without edditinng the library.
+17. Add option to mute functions, as it is very painfull to use in jupyter
 """
 
 """
@@ -316,17 +317,31 @@ class pipettor(serial_device):
 		self.write_wait("$H")
 		self.readAll()
 	
-	def drop_tip(self):
-		self.home()
-		self.write_wait("M3 S90")
+	def drop_tip(self, plunger_lower=-40, plunger_raise=-2):
+		"""
+		Tells currently connected pipettor to drop a tip. No checking is performed.
+		Both parameters mean units to move plunger in absolute values.
+		Value "0" will trigger endstop; -40 is the lowest possible position.
+		
+		Function lowers the servo lever and then moves plunger down. Lowered servo lever
+		will push on the tip dispencer part, thus discarding the tip.
+		After that, plunger is moved up and servo lever is risen.
+		
+		Parameters:
+			- plunger_lower: Coordinate to move plunger down to, after lowering the servo
+			- plunger_raise: Coordinate to move plunger up, after discarding the tip.
+				Do not set to 0, as this may cause problem when parking the servo.
+		"""
+		self.home()	# Home the pipettor
+		self.write_wait("M3 S90")	# Making sure servo lever is in the upper position
 		self.readAll()
-		self.write_wait("M5")
+		self.write_wait("M5")	# Lowering the servo lever
 		self.readAll()
-		self.write_wait("G0 X-35")
+		self.write_wait("G0 X"+str(plunger_lower)) # Moving plunger down to discard tip
 		self.readAll()
-		self.write_wait("G0 X0")
+		self.write_wait("G0 X"+str(plunger_raise))	# Raising plunger up
 		self.readAll()
-		self.write_wait("M3 S90")
+		self.write_wait("M3 S90")	# Raising servo lever
 		self.readAll()
 
 class mobile_touch_probe(serial_device):
@@ -579,7 +594,7 @@ class arnie(serial_device):
 	
 	def return_tool(self):
 		"""
-		Returns tool back on its place.
+		Returns tool back to its place.
 		The place is provided either with tool instance, or simply as position_tuple (x, y, z)
 		"""
 		if self.current_tool == None:
