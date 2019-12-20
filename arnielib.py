@@ -17,6 +17,7 @@ TODO:
 15. Sometimes "connect" function fails returning error when checking for the device list. Need to be fixed
 16. Add function that allows to enter a new rack without edditinng the library.
 17. Add option to mute functions, as it is very painfull to use in jupyter
+18. User should enter parameters of racks at calibration or calling; save it as documents and store wherever they want it.
 """
 
 """
@@ -67,7 +68,7 @@ rack_dict = {
 	"96_well": {"rack_height": 16, "n_columns": 12, "n_rows": 8, "dist_between_wells_x": 9, "dist_between_wells_y": 9, "dist_center_to_well_00": [49.5, 31.5], "tube_height_above_rack": 10, "tube_height": 21, "tube_width": 6},
 	"eppendorf": {"rack_height": 94, "n_columns": 8, "n_rows": 4, "dist_between_wells_x": 17, "dist_between_wells_y": 23, "dist_center_to_well_00": [59.5, 28], "tube_height_above_rack": 13, "tube_height": 39, "tube_width": 10},
 	"50_ml": {"rack_height": 94, "n_columns": 3, "n_rows": 2, "dist_between_wells_x": 50, "dist_between_wells_y": 50, "dist_center_to_well_00": [50, 25], "tube_height_above_rack": 21, "tube_height": 113, "tube_width": 27},
-	"magnetic_eppendorf": {"rack_height": 34.4, "n_columns": 8, "n_rows": 2, "dist_between_wells_x": 15, "dist_between_wells_y": 80.6, "dist_center_to_well_00": [52.5, 34.8], "tube_height_above_rack": 13, "tube_height": 39, "tube_width": 10},
+	"magnetic_eppendorf": {"rack_height": 94, "n_columns": 8, "n_rows": 2, "dist_between_wells_x": 15, "dist_between_wells_y": 78.6, "dist_center_to_well_00": [52.5, 34.8], "tube_height_above_rack": 13, "tube_height": 39, "tube_width": 10},
 	}
 
 pipettor_volumes = [1000, 200, 20]
