@@ -43,7 +43,10 @@ import glob
 
 message_level = "verbose"
 robots = []
-safe_height = 5900
+safe_height = 590
+
+# Arnie parameters
+
 
 default_slot = {
 	"LT": [-1, -1], 
@@ -70,6 +73,21 @@ rack_dict = {
 	"50_ml": {"rack_height": 94, "n_columns": 3, "n_rows": 2, "dist_between_wells_x": 50, "dist_between_wells_y": 50, "dist_center_to_well_00": [50, 25], "tube_height_above_rack": 21, "tube_height": 113, "tube_width": 27},
 	"magnetic_eppendorf": {"rack_height": 94, "n_columns": 8, "n_rows": 2, "dist_between_wells_x": 15, "dist_between_wells_y": 78.6, "dist_center_to_well_00": [52.5, 34.8], "tube_height_above_rack": 13, "tube_height": 39, "tube_width": 10},
 	}
+
+# Tip trays parameters
+EXPECTED_TIP_TRAY_HEIGHT = 68 # mm from the floor; physically measured
+SAFE_TIP_TRAY_HEIGHT = 100 # mm from the floor; this is the height that robot is guaranteed not to hit anything around the tip tray
+
+# Movement parameters
+# Default movement speed:
+DEFAULT_X_SPEED = 8000
+DEFAULT_Y_SPEED = 8000
+DEFAULT_Z_SPEED = 5000 # Safe speed to move Z up; moving down may be much faster.
+# TODO: Not implemented yet; make functions that differentiate between up and down Z axis movement,
+# and automatically use this default.
+DEFAULT_Z_SPEED_DOWN = 15000 # Default speed when robot moves Z axis down. 
+
+
 
 pipettor_volumes = [1000, 200, 20]
 pipettor_types = ["single", "multi"]
@@ -371,7 +389,7 @@ GenCenterXYZ = lambda xmin, xmax, ymin, ymax, zmin, zmax: (
 )
 		
 class arnie(serial_device):
-	def promote(self, speed_x=15000, speed_y=15000, speed_z=15000):
+	def promote(self, speed_x=8000, speed_y=8000, speed_z=5000):
 		self.calibrated = False
 		self.speed = [speed_x, speed_y, speed_z]
 		self.tools = []
@@ -682,11 +700,48 @@ def move_delta_mm(robot, dx=0, dy=0, dz=0):
 		
 	robot.move_delta(dx=dx * robot.params["units_in_mm"][0], dy=dy * robot.params["units_in_mm"][1], dz=dz * robot.params["units_in_mm"][2])
 
-def find_wall(robot, axis, direction, name="unknown", touch_function=None):
+
+def find_wall(robot, axis, direction, name="unknown", touch_function=None, 
+			  step_decrease_list=[8.1, 2.7, 0.9, 0.3, 0.1],
+			  speed_xy_list=[1000, 500, 300, 100, 50], speed_z_list=[5000, 4000, 3000, 2000, 1000], 
+			  step_back_length=5):
+	"""
+	Find coordinate of the wall on given "axis".
+	Robot assumed to be connected to mobile touch probe, or a "stalaktite".
+	Will move on "axis" into "direction", until stalaktite detects collision. Then it 
+	retracts until stalaktite stops detecting collision. Then it approaches again with finer steps,
+	until collision detected. Then retracts and approaches again with extra fine steps. 
+	
+	After that, it retracts on "step_back_length".
+	
+	Parameters:
+		- robot - robot instance
+		- axis - axis at which to perform calibration; only allowed "X", "Y" or "Z".
+		- direction - direction at which to move robot; eiter +1 or -1. +1 moves further from homing point; -1 - towards homing point
+		- name - only used for logging; not influences operation. Default is "unknown".
+		- touch_function - unclear
+		- step_decrease_list - list of 5 elements; each element is how far to move each step until checking the touch probe state.
+			default is [8.1, 2.7, 0.9, 0.3, 0.1]
+		- speed_xy_list - list of 5 elements, which are the speed at which to do movement in XY direction.
+			default is [1000, 500, 300, 100, 50]
+		- speed_z_list - list of 5 elements, which are the speed at which to do movement in Z direction.
+			default is [5000, 4000, 3000, 2000, 1000]
+		- step_back_length - distance to retract after finishing calibration; default is 5.
+	
+	Returns coordinate at which collision was detected during finest approach.
+	"""
+	# Sanity checks --------------------------------------------------------------------------------------------------------------------
 	# direction should be either 1 or -1
 	if direction != 1 and direction != -1:
 		print("ERROR: invalid direction.")
 		print(direction)
+		return
+	
+	# Checking whether axes specified properly
+	axis = axis.upper()
+	if axis != "X" and axis != "Y" and axis != "Z":
+		print("ERROR: wrong axis specified. Only allowed X, Y or Z")
+		print(axis)
 		return
 	
 	# TODO: This check had to be commented out because this function is used for stalagmite calibration too. Bring it back somehow?
@@ -694,30 +749,30 @@ def find_wall(robot, axis, direction, name="unknown", touch_function=None):
 	#	print("ERROR: No probe attached.")
 	#	return
 	
-	if axis == "Z": 
-		approach_step_1 = 45.0 # CONSTANT
-		approach_step_2 = 5.0
-	else:
-		approach_step_1 = 10.0 # CONSTANT
-		approach_step_2 = 1.0
-	
 	# TODO: This is terrible. Sort it out. 
 	if robot.current_tool_device != None:
 		probe = robot.current_tool_device
 	else:
 		probe = None
-		
-	ApproachUntilTouch(robot, probe, axis, direction * approach_step_1, touch_function=touch_function) # CONSTANT
-	retract_until_no_touch(robot, probe, axis, -direction * approach_step_2, touch_function=touch_function) # CONSTANT
-	wall_coord = ApproachUntilTouch(robot, probe, axis, direction * 0.1, touch_function=touch_function, speed=100) # CONSTANT
+	# ---------------------------------------------------------------------------------------------------------------------------------
+	
+	# Performing approaches while detecting collision with stalaktite
+	ApproachUntilTouch(robot, probe, axis, direction * step_decrease_list[0], touch_function=touch_function, speed_xy=speed_xy_list[0], speed_z=speed_z_list[0])
+	retract_until_no_touch(robot, probe, axis, -direction * step_decrease_list[1], touch_function=touch_function, speed_xy=speed_xy_list[1], speed_z=speed_z_list[1])
+	ApproachUntilTouch(robot, probe, axis, direction * step_decrease_list[2], touch_function=touch_function, speed_xy=speed_xy_list[2], speed_z=speed_z_list[2])
+	retract_until_no_touch(robot, probe, axis, -direction * step_decrease_list[3], touch_function=touch_function, speed_xy=speed_xy_list[3], speed_z=speed_z_list[3])
+	wall_coord = ApproachUntilTouch(robot, probe, axis, direction * step_decrease_list[4], touch_function=touch_function, speed_xy=speed_xy_list[4], speed_z=speed_z_list[4])
 	result = wall_coord[axis_index(axis)]
-	step_back = [0, 0, 0]
-	if axis == "Z": 
-		step_back_length = 30 # CONSTANT
+	
+	#Handling retractiong after calibration is finished
+	retraction_len_and_dir = step_back_length * -direction
+	if axis == "X":
+		robot.move_delta(dx=retraction_len_and_dir)
+	elif axis == "Y":
+		robot.move_delta(dy=retraction_len_and_dir)
 	else:
-		step_back_length = 5 # CONSTANT
-	step_back[axis_index(axis)] = -direction * step_back_length
-	robot.move_delta(dx=step_back[0], dy=step_back[1], dz=step_back[2])
+		robot.move_delta(dz=retraction_len_and_dir)
+
 	log_value(name, result, axis)
 	return result
 
@@ -1140,24 +1195,33 @@ def calibrate_rectangle(robot, rect, safe_height, measure_height, name="Default 
 	
 	return [north1, north2, east1, east2, south1, south2, west1, west2]
 
-def calibrate_tip_tray(robot, x_n, y_n, tray_volume):
+def calibrate_tip_tray(robot, x_n, y_n, tray_volume, 
+		expected_tray_height=EXPECTED_TIP_TRAY_HEIGHT,
+		safe_tray_height=SAFE_TIP_TRAY_HEIGHT):
+		
+	"""
+	Calibrates a tip tray
+	
+	Function is used for any tip tray; it may be 1000, 300, 200, 20 uL trays
+	(may be used for any other trays that may appear)
+	
+	Parameters:
+		- robot - arnie's instance
+		- x_n, y_n - which slot the tray is positioned (Arnie has X slots 0-5 and Y slots 0-3)
+		- expected_tray_height - Height from the floor at which to perform X, Y calibration, mm
+		- safe_tray_height - Height at which one is not afraid to crash robot to anything around given slot; should be above calibration height.
+		
+	Results are saved into tools.json
+	"""
+	
 	slot = robot.params["slots"][x_n][y_n]
 	robot.home("Z")
 	goto_slot_lt(robot, x_n, y_n)
 	
 	floor = slot["floor_z"]
 	
-	tray_safe_height = floor - 100 * robot.params["units_in_mm"][2]
-	
-	if tray_volume == 1000:
-		tray_measure_height = floor - 70 * robot.params["units_in_mm"][2]
-	elif tray_volume == 200:
-		tray_measure_height = floor - 45 * robot.params["units_in_mm"][2]
-	elif tray_volume == 20:
-		tray_measure_height = floor - 45 * robot.params["units_in_mm"][2]
-	else:
-		print("ERROR: Unknown volume: " + str(tray_volume))
-		return 
+	tray_safe_height = floor - safe_tray_height * robot.params["units_in_mm"][2]
+	tray_measure_height = floor - expected_tray_height * robot.params["units_in_mm"][2]
 	
 	north1, north2, east1, east2, south1, south2, west1, west2 = calibrate_rectangle(robot, robot.params["slots"][x_n][y_n], tray_safe_height, tray_measure_height, "calibrate_tip_tray-")
 	
@@ -1768,7 +1832,7 @@ def calibrate_circle(robot, approx_center):
 	
 	return center_x, center_y, radius
 
-def calibrate_slot(robot, n_x, n_y):
+def calibrate_slot(robot, n_x, n_y, retract_z=2.5):
 	calibration_start_time = time.time()
 
 	approx_const = 0.9
@@ -1776,7 +1840,7 @@ def calibrate_slot(robot, n_x, n_y):
 	robot.move(z=safe_height)
 	go_to_slot_center_calibration(robot, n_x, n_y)
 	z_max = find_wall(robot, "Z", 1, "calibrate_slot-center" + str(n_x) + "_" + str(n_y))
-	robot.move(z=z_max - 30)
+	robot.move(z=z_max - retract_z)
 	
 	inner_slot_w = robot.params['slot_width'] - robot.params['plank_width']
 	inner_slot_h = robot.params['slot_height'] - robot.params['flower_height']
@@ -1902,18 +1966,22 @@ def ziggurat_calibration(robot, x_n, y_n):
 	
 	update_floor(robot)
 
-def calibrate_floor(robot):
-	if robot.current_tool["type"] != "stationary_probe": 
-		print("ERROR: No probe connected.")
-		return
+def calibrate_floor(robot, expected_slot_size=[139, 86], safe_z=590, retract_xy=5, retract_z=3):
+	"""
+	Basic floor calibration function. To be used after robot assembly (or major rework).
+	Will touch every slot.
+	"""
+	#if robot.current_tool["type"] != "stationary_probe": 
+	#	print("ERROR: No probe connected.")
+	#	return
 	
 	calibration_start_time = time.time()
 	
 	slot_width_mm = 150
 	slot_height_mm = 110
 	
-	expected_slot_width = 278
-	expected_slot_height = 172
+	expected_slot_width = expected_slot_size[0]
+	expected_slot_height = expected_slot_size[1]
 	approx_const = 0.9
 	
 	n_slots_width = 6
@@ -1929,36 +1997,43 @@ def calibrate_floor(robot):
 		'units_in_mm': [-1.0, -1.0, -1.0]
 	}
 
-	robot.home()
+	# Temporary commented to shorten debugging time
+	#robot.home()
 	robot.min = robot.getPosition()
 	robot.max = [0, 0, 0]
 	
-	robot.move(z=5900)
+	# Finding rough distance to the floor
+	robot.move(z=safe_z)
 	robot.max[2] = find_wall(robot, "Z", 1, "calibrate-0-0-floor")
 	
-	robot.move(z=robot.max[2] - 30)
-	robot.move(y = 100) # CONSTANT
+	# Calibrating top-left plank
+	# --------------------------
+	robot.move(z=robot.max[2] - retract_z)	# Move robot up not to touch floor
+	robot.move(y = 50) # Move robot approx to the center of the top-left plank
+	# Now approaching first plank from left to right (from home position)
 	first_plank_left_y = find_wall(robot, "X", 1, "calibrate-first_plank_left")
-	robot.move(z=safe_height)
-	robot.move_delta(dx=50)
+	robot.move(z=safe_z)	# Moving up not to get to the other side of the plank, above it.
+	robot.move_delta(dx=15)	# Moving to the other side of the plank
 	
-	robot.move(z=robot.max[2] - 30)
+	robot.move(z=robot.max[2] - retract_z) # Moving robot down so it is below the slot border level
 	pos = robot.getPosition()
+	slot_wall_x_down = find_wall(robot, "X", -1, "calibrate-first_slot_down")  # Approaching slot from the other direction
+	robot.move_delta(dx=expected_slot_width * approx_const)	# Move to the other side of the slot, same Y
+
+	slot_wall_x_up = find_wall(robot, "X", 1, "calibrate-first_slot_up")	# Approaching second plank on the top-left slot (00)
+#	robot.move_delta(dx=-retract_xy)	# Moving X slightly back, so robot does not touch plank while calibrating Y
+	slot_wall_y_down = find_wall(robot, "Y", -1, "calibrate-first_slot_down")	# Finding upper Y border
+	robot.move_delta(dy=expected_slot_height * approx_const)	# Moving to the other Y border of the top-left slot (00)
+	slot_wall_y_up = find_wall(robot, "Y", 1, "calibrate-first_slot_up")	# Finding lower Y border
 	
-	slot_wall_x_down = find_wall(robot, "X", -1, "calibrate-first_slot_down")
-	robot.move_delta(dx=expected_slot_width * approx_const)
-	slot_wall_x_up = find_wall(robot, "X", 1, "calibrate-first_slot_up")
-	slot_wall_y_down = find_wall(robot, "Y", -1, "calibrate-first_slot_down")
-	robot.move_delta(dy=expected_slot_height * approx_const)
-	slot_wall_y_up = find_wall(robot, "Y", 1, "calibrate-first_slot_up")
-	
+	# Calculating top-left slot (00) parameters
 	first_center = [(slot_wall_x_down + slot_wall_x_up) / 2, (slot_wall_y_down + slot_wall_y_up) / 2]
 	log_value("calibrate-first_center_approx", first_center[0], "X")
 	log_value("calibrate-first_center_approx", first_center[1], "Y")
 	
 	robot.move(z=safe_height)
-	robot.move_delta(dy=70)
-	robot.move(z=robot.max[2] - 30)
+	robot.move_delta(dy=35)
+	robot.move(z=robot.max[2] - retract_z)
 	tmp_y_measurement = find_wall(robot, "Y", -1, "calibrate-flower_top")	
 
 	plank_width = slot_wall_x_down - first_plank_left_y
@@ -1981,7 +2056,7 @@ def calibrate_floor(robot):
 	robot.move(z=safe_height)
 	robot.move(x = last_slot_center_estimate[0], y = last_slot_center_estimate[1])
 
-	find_wall(robot, "Z", 1, "calibrate-last_slot_center")	
+	find_wall(robot, "Z", 1, "calibrate-last_slot_center", step_back_length=2.5)	
 
 	robot.move_delta(dx= -expected_slot_width * approx_const / 2)
 	slot_wall_x_down = find_wall(robot, "X", -1, "calibrate-last_slot_down")
@@ -1992,7 +2067,7 @@ def calibrate_floor(robot):
 	robot.move_delta(dy=expected_slot_height * approx_const)
 	slot_wall_y_up = find_wall(robot, "Y", 1, "calibrate-last_slot_up")
 	
-	robot.move_delta(dz=-70)
+	robot.move_delta(dz=-7)
 	
 	robot.last_slot = [slot_wall_x_down, slot_wall_x_up, slot_wall_y_down, slot_wall_y_up, robot.getPosition()[2]]
 
@@ -2000,8 +2075,15 @@ def calibrate_floor(robot):
 	log_value("calibrate-last_center_approx2", last_center[0], "X")
 	log_value("calibrate-last_center_approx2", last_center[1], "Y")
 	
-	robot.params['units_in_mm'][0] = (last_center[0] - first_center[0]) / ((robot.params['width_n'] - 1) * slot_width_mm)
-	robot.params['units_in_mm'][1] = (last_center[1] - first_center[1]) / ((check_slot_n_y - 1) * slot_height_mm)
+	# units_in_mm parameter is used when moving step is different than mm.
+	# 12/25/2019 Sergii corrected firmware, so now movement unit is mm.
+	# TODO. units_in_mm parameter should be either completely removed, or be optional.
+	# For now, I am adding it for compatibility.
+	
+	#robot.params['units_in_mm'][0] = (last_center[0] - first_center[0]) / ((robot.params['width_n'] - 1) * slot_width_mm)
+	#robot.params['units_in_mm'][1] = (last_center[1] - first_center[1]) / ((check_slot_n_y - 1) * slot_height_mm)
+	robot.params['units_in_mm'][0] = 1.0
+	robot.params['units_in_mm'][1] = 1.0
 	
 	robot.params['slot_width'] = slot_wall_x_up - slot_wall_x_down + plank_width
 	robot.params['slot_height'] = slot_wall_y_up - slot_wall_y_down + flower_height	
@@ -2013,13 +2095,15 @@ def calibrate_floor(robot):
 	robot.calibrated = True
 	
 	fill_slots(robot)
-	ziggurat_calibration(robot)
+#	ziggurat_calibration(robot)
 	
 	update_floor(robot)
 	
 	calibration_end_time = time.time()
 	print("Calibration time: ")
 	print(calibration_end_time - calibration_start_time)
+
+
 
 # TODO: inline this function.
 def fill_slots(robot):
@@ -2088,7 +2172,7 @@ def AxisToCoordinates(axis, value, nonetype=False):
 		print("Provide axis x, y or z")
 	return t
 
-def retract_until_no_touch(arnie, touch_probe, axis, step, touch_function=None):
+def retract_until_no_touch(arnie, touch_probe, axis, step, touch_function=None, speed_xy=4000, speed_z=2000):
 	if touch_function == None:
 		touch_function = touch_probe.isTouched
 		
@@ -2096,7 +2180,7 @@ def retract_until_no_touch(arnie, touch_probe, axis, step, touch_function=None):
 	
 	if delta_coord != [0, 0, 0] and delta_coord != [None, None, None]:
 		while touch_function():
-			arnie.move_delta(dx=delta_coord[0], dy=delta_coord[1], dz=delta_coord[2], speed_xy=1000)
+			arnie.move_delta(dx=delta_coord[0], dy=delta_coord[1], dz=delta_coord[2], speed_xy=speed_xy, speed_z=speed_z)
 	else:
 		print ("Interrupted because wrong axis was provided.")
 		return
@@ -2104,7 +2188,7 @@ def retract_until_no_touch(arnie, touch_probe, axis, step, touch_function=None):
 	x, y, z = arnie.getPosition()
 	return x, y, z
 	
-def ApproachUntilTouch(arnie, touch_probe, axis, step, expectation=-1, tolerance=-1, touch_function=None, speed=None):
+def ApproachUntilTouch(arnie, touch_probe, axis, step, expectation=-1, tolerance=-1, touch_function=None, speed_xy=8000, speed_z=5000):
 	"""
 	Arnie will move along specified "axis" by "step"
 	Provide:
@@ -2119,14 +2203,10 @@ def ApproachUntilTouch(arnie, touch_probe, axis, step, expectation=-1, tolerance
 	
 	delta_coord = AxisToCoordinates(axis, step)
 	
-	speed_xy = 1000
-	if speed != None:
-		speed_xy = speed
-	
 	if delta_coord != [0, 0, 0] and delta_coord != [None, None, None]:
 		while not touch_function():
 			# ApproachUntilTouch forward by a tiny step	
-			arnie.move_delta(dx=delta_coord[0], dy=delta_coord[1], dz=delta_coord[2], speed_xy=speed_xy)
+			arnie.move_delta(dx=delta_coord[0], dy=delta_coord[1], dz=delta_coord[2], speed_xy=speed_xy, speed_z=speed_z)
 			if expectation != -1 and tolerance != -1:
 				position = arnie.getPosition()
 				if abs(position[axis_index(axis)] - expectation) > tolerance:
@@ -2196,7 +2276,7 @@ def connect_tool(port_name, robot=None):
 	if device.__class__ == pipettor:
 		# Sergii, 12/17/2019
 		# Quick fix for the "Alarm" error after picking up the tool,
-		# Which hangs the operation and prevents homing from succeeding
+		# which hangs the operation and prevents homing from succeeding
 		device.write("$X")
 		device.write("G0 X-5")
 		# Homing the pipettor
