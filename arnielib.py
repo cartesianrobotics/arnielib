@@ -999,6 +999,12 @@ def calibrate_tip(robot, x_n, y_n, touch_function, initial_height_mm, initial_po
 
 	robot.home("Z")
 	robot.move(x=initial_point[0], y=initial_point[1])
+	print ("Floor_z height:")
+	print (slot["floor_z"])
+	print (initial_height_mm)
+	print (u_in_mm[2])
+	print (slot["floor_z"] - (initial_height_mm + 10) * u_in_mm[2])
+
 	robot.move(z=slot["floor_z"] - (initial_height_mm + 10) * u_in_mm[2])
 	height = find_wall(robot, "Z", 1, "calibrate_tip-height", touch_function)
 	
@@ -1031,6 +1037,7 @@ def calibrate_tip(robot, x_n, y_n, touch_function, initial_height_mm, initial_po
 	
 	return result
 
+	
 def calibrate_pipettor_tip(robot, x_n, y_n, initial_point=None):
 	# x_n, y_n -- coordinates of the slot that contains the stalagmite.
 	stalagmite_height_mm = 130
@@ -1086,9 +1093,8 @@ def get_tool(robot, type, subtype=None, volume=None):
 		
 	robot.get_tool(tool_to_pickup["n_x"], tool_to_pickup["n_y"])
 
-def calibrate_mobile_probe_tip(robot, x_n, y_n, initial_point=None):
+def calibrate_mobile_probe_tip(robot, x_n, y_n, initial_point=None, stalagmite_height=130):
 	# x_n, y_n -- coordinates of the slot that contains the stalagmite.
-	stalagmite_height_mm = 130
 	
 	stat_probe = None
 	for device in robot.tool_devices:
@@ -1104,7 +1110,7 @@ def calibrate_mobile_probe_tip(robot, x_n, y_n, initial_point=None):
 	def touch_function():
 		return stat_probe.isTouched() or mob_probe.isTouched()
 	
-	position = calibrate_tip(robot, x_n, y_n, touch_function, stalagmite_height_mm, initial_point)
+	position = calibrate_tip(robot, x_n, y_n, touch_function, stalagmite_height, initial_point)
 	robot.move(z=position[2])
 	
 	tool_i = find_tool_i_by_type(robot, "mobile_probe")
@@ -2084,6 +2090,7 @@ def calibrate_floor(robot, expected_slot_size=[139, 86], safe_z=590, retract_xy=
 	#robot.params['units_in_mm'][1] = (last_center[1] - first_center[1]) / ((check_slot_n_y - 1) * slot_height_mm)
 	robot.params['units_in_mm'][0] = 1.0
 	robot.params['units_in_mm'][1] = 1.0
+	robot.params['units_in_mm'][2] = 1.0
 	
 	robot.params['slot_width'] = slot_wall_x_up - slot_wall_x_down + plank_width
 	robot.params['slot_height'] = slot_wall_y_up - slot_wall_y_down + flower_height	
