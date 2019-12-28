@@ -264,7 +264,7 @@ class serial_device():
 		
 		
 	# TODO: Inline this function so that people don't circumvent logging by using this function. 
-	def read(self, number_of_bytes=1):
+	def _read(self, number_of_bytes=1):
 		"""
 		Same functionality as Serial.read()
 		"""
@@ -275,16 +275,38 @@ class serial_device():
 		Function will wait until everything that the device send is read
 		"""
 		# Give time for device to respond
-		time.sleep(timeout)
+		#time.sleep(timeout)
 		# Wait forever for device to return something
-		message=self.read()
+		message=self._read()
 		#message=''
 		# Continue reading until device output buffer is empty
 		while self.port.inWaiting():
-			message += self.read()
+			message += self._read()
 		
-		message_log(self.port_name, message, "read")
 		return message
+	
+	def readBufferUntilMatch(self, pattern):
+		"""
+		This function will monitor serial port buffer, until the "pattern" occurs.
+		
+		Inputs:
+			- pattern - any string; put something that is expected to return from serial port
+			
+		Returns:
+			Everything which was read from the buffer before the pattern occurred, including the pattern.
+		"""
+		
+		full_message = ""
+		while True:
+			message = self.readAll()
+			if message != "":
+				message_log(self.port_name, message, "read")
+				print("MESSAGE: " + repr(message))
+				full_message += message
+				if re.search(pattern=confirm_message, string=full_message):
+					self.recent_message = full_message
+					break
+		return full_message
 
 	# TODO: Rename this into "write", and rename "write"into "write_ignore_response".
 	def writeAndWait(self, expression, eol=None, confirm_message='ok\n'):
@@ -302,6 +324,7 @@ class serial_device():
 		while True:
 			message = self.readAll()
 			if message != "":
+				message_log(self.port_name, message, "read")
 				print("MESSAGE: " + repr(message))
 				full_message += message
 				if re.search(pattern=confirm_message, string=full_message):
