@@ -18,6 +18,7 @@ TODO:
 16. Add function that allows to enter a new rack without edditinng the library.
 17. Add option to mute functions, as it is very painfull to use in jupyter
 18. User should enter parameters of racks at calibration or calling; save it as documents and store wherever they want it.
+19. For some reason, move commands refuse to accept value "0". They just don't perform a movement.
 """
 
 """
@@ -516,7 +517,7 @@ class arnie(serial_device):
 	def openTool(self):
 		"""Docker opens to accept a tool"""
 		self.write('M280 P1 S10')
-		time.sleep(1.5)
+		time.sleep(3)
 		
 	def closeTool(self):
 		"""Docker closes, fixing a tool in place"""
@@ -557,7 +558,7 @@ class arnie(serial_device):
 		self.move(x, y, z, z_first=False, speed_xy=speed_xy, speed_z=speed_z)
 	
 	
-	def get_tool(self, x_n, y_n):
+	def get_tool(self, x_n, y_n, z_init=1, z_dest_delta=0):
 		"""
 		Engages with a tool, using tool instance for guidance
 		"""
@@ -577,12 +578,14 @@ class arnie(serial_device):
 		dest = tool_to_get["position"]
 		
 		self.openTool()
-		self.home("Z")
+		self.move(z=z_init)
+		#self.home("Z")
 		self.move(x=dest[0], y=dest[1])
-		self.move(z=dest[2])
+		self.move(z=dest[2] + z_dest_delta) # z_dest_delta corrects for the error in instrument height estimation
 		self.closeTool()
 		self.current_tool = saved_tool
-		self.home("Z")
+		#self.home("Z")
+		self.move(z=z_init)
 		
 		# TODO: handle the case when the port is physically not connected
 		while True:
@@ -611,7 +614,7 @@ class arnie(serial_device):
 		#	print("Failed to pickup tool. Program stopped.")
 			
 	
-	def return_tool(self):
+	def return_tool(self, z_init=1):
 		"""
 		Returns tool back to its place.
 		The place is provided either with tool instance, or simply as position_tuple (x, y, z)
@@ -628,10 +631,13 @@ class arnie(serial_device):
 			time.sleep(2)
 		
 		dest = self.current_tool["position"]
-		self.home("Z")
+		self.move(z=z_init)
+		#self.home("Z")
 		self.move(x=dest[0], y=dest[1])
 		self.move(z=dest[2])
 		self.openTool()
+#		time.sleep(5)	# Short delay after placing an instrument into the holder, to prevent premature Z lifting
+		self.move(z=z_init)
 		self.home("Z")
 		self.current_tool = None
 		self.current_tool_device = None
@@ -938,7 +944,8 @@ def calibrate_mobile_gripper(robot, x_n, y_n):
 
 def calibrate_pipettor(robot, x_n, y_n, volume, pipettor_type):
 	pipettor_height_mm = 157
-	expected_z = robot.params["slots"][x_n][y_n]["floor_z"] - ((pipettor_height_mm - 3) * robot.params["units_in_mm"][2])
+	#expected_z = robot.params["slots"][x_n][y_n]["floor_z"] - ((pipettor_height_mm - 3) * robot.params["units_in_mm"][2])
+	expected_z = robot.params["slots"][x_n][y_n]["floor_z"] - ((pipettor_height_mm - 3))
 	
 	# TODO: Replace all of this with a calibrate_circle_outer call. Like in calibrate_mobile_gripper. 
 	
@@ -948,19 +955,22 @@ def calibrate_pipettor(robot, x_n, y_n, volume, pipettor_type):
 	robot.move_delta(dx=robot.params['slot_width'] / 2)
 	north = find_wall(robot, "Y", 1, "calibrate_pipettor-north")
 
-	robot.move_delta(dz = -robot.params['units_in_mm'][2] * 30)
+	#robot.move_delta(dz = -robot.params['units_in_mm'][2] * 30)
+	robot.move_delta(dz = -30)
 	goto_slot_lt(robot, x_n, y_n)
 	robot.move(z=expected_z)
 	robot.move_delta(dy=robot.params['slot_height'] / 2)
 	east = find_wall(robot, "X", 1, "calibrate_pipettor-east")
 	
-	robot.move_delta(dz = -robot.params['units_in_mm'][2] * 30)
+	#robot.move_delta(dz = -robot.params['units_in_mm'][2] * 30)
+	robot.move_delta(dz = -30)
 	goto_slot_rb(robot, x_n, y_n)
 	robot.move(z=expected_z)
 	robot.move_delta(dx=-robot.params['slot_width'] / 2)
 	south = find_wall(robot, "Y", -1, "calibrate_pipettor-south")
 	
-	robot.move_delta(dz = -robot.params['units_in_mm'][2] * 30)
+	#robot.move_delta(dz = -robot.params['units_in_mm'][2] * 30)
+	robot.move_delta(dz = -30)
 	goto_slot_rb(robot, x_n, y_n)
 	robot.move(z=expected_z)
 	robot.move_delta(dy=-robot.params['slot_height'] / 2)
@@ -973,7 +983,9 @@ def calibrate_pipettor(robot, x_n, y_n, volume, pipettor_type):
 	length_screw_mm = 33.9
 	stalactite_height = 147
 	tool_height = 252
-	tool["position"][2] = robot.params["slots"][x_n][y_n]["floor_z"] + (- tool_height + length_screw_mm + stalactite_height) * robot.params["units_in_mm"][2]
+	#tool_height = 254
+	#tool["position"][2] = robot.params["slots"][x_n][y_n]["floor_z"] + (- tool_height + length_screw_mm + stalactite_height) * robot.params["units_in_mm"][2]
+	tool["position"][2] = robot.params["slots"][x_n][y_n]["floor_z"] + (- tool_height + length_screw_mm + stalactite_height)
 	
 	tool["n_x"] = x_n
 	tool["n_y"] = y_n
@@ -999,11 +1011,6 @@ def calibrate_tip(robot, x_n, y_n, touch_function, initial_height_mm, initial_po
 
 	robot.home("Z")
 	robot.move(x=initial_point[0], y=initial_point[1])
-	print ("Floor_z height:")
-	print (slot["floor_z"])
-	print (initial_height_mm)
-	print (u_in_mm[2])
-	print (slot["floor_z"] - (initial_height_mm + 10) * u_in_mm[2])
 
 	robot.move(z=slot["floor_z"] - (initial_height_mm + 10) * u_in_mm[2])
 	height = find_wall(robot, "Z", 1, "calibrate_tip-height", touch_function)
@@ -1059,7 +1066,7 @@ def calibrate_pipettor_tip(robot, x_n, y_n, initial_point=None):
 	robot.current_tool["tip"] = position
 	update_tools(robot)
 
-def get_tool(robot, type, subtype=None, volume=None):
+def get_tool(robot, type, subtype=None, volume=None, z_dest_delta=0):
 	tools = find_tools_by_type(robot, type)
 	if len(tools) == 0:
 		print("ERROR: No such tool exists: " + type + ".")
@@ -1091,7 +1098,7 @@ def get_tool(robot, type, subtype=None, volume=None):
 	else:
 		tool_to_pickup = robot.tools[tools[0]]
 		
-	robot.get_tool(tool_to_pickup["n_x"], tool_to_pickup["n_y"])
+	robot.get_tool(tool_to_pickup["n_x"], tool_to_pickup["n_y"], z_dest_delta=z_dest_delta)
 
 def calibrate_mobile_probe_tip(robot, x_n, y_n, initial_point=None, stalagmite_height=130):
 	# x_n, y_n -- coordinates of the slot that contains the stalagmite.
