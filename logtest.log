@@ -1,0 +1,149 @@
+2019-12-28 18:01:05,188 Initialization of a device at port COM4 started.
+2019-12-28 18:01:05,189 Expected welcome message is 
+2019-12-28 18:01:05,189 Attempted to close port COM4, unsuccessfully
+2019-12-28 18:01:05,191 Welcome message received:
+2019-12-28 18:01:06,219 Received message start
+echo:Marlin 1.1.8
+
+echo: Last Updated: 2017-12-25 12:00 | Author: (none, default config)
+echo:Compiled: Dec 22 2019
+echo: Free Memory: 5437  PlannerBufferBytes: 1232
+echo:Hardcoded Default Settings Loaded
+echo:  G21    ; Units in mm
+
+echo:Filament settings: Disabled
+echo:  M200 D3.00
+echo:  M200 D0
+echo:Steps per unit:
+echo:  M92 X20.00 Y20.00 Z25.00 E500.00
+echo:Maximum feedrates (units/s):
+echo:  M203 X2000.00 Y2000.00 Z4000.00 E25.00
+echo:Maximum Acceleration (units/s2):
+echo:  M201 X10000 Y10000 Z1000 E10000
+echo:Acceleration (units/s2): P<print_accel> R<retract_accel> T<travel_accel>
+echo:  M204 P500.00 R10000.00 T500.00
+echo:Advanced: S<min_feedrate> T<min_travel_feedrate> B<min_segment_time_us> X<max_xy_jerk> Z<max_z_jerk> E<max_e_jerk>
+echo:  M205 S0.00 T0.00 B20000 X2.00 Y2.00 Z2.00 E5.00
+echo:Home offset:
+echo:  M206 X0.00 Y0.00 Z0.00
+echo:PID settings:
+echo:  M301 P22.20 I1.08 D114.00
+echo:Z-Probe Offset (mm):
+echo:  M851 Z0.00
+ from port COM4 through function readAll()
+2019-12-28 18:01:08,436 Sending message G28 Z to port COM4
+2019-12-28 18:01:11,758 Received message echo:busy: processing
+X:0.00 Y:0.00 Z:0.00 E:0.00 Count X:0 Y:0 Z:0
+ok
+ from port COM4 through function readBufferUntilMatch()
+2019-12-28 18:01:11,758 It was successfully matched with pattern ok
+
+2019-12-28 18:01:11,979 Matched pattern Marlin to the welcome message start
+echo:Marlin 1.1.8
+
+echo: Last Updated: 2017-12-25 12:00 | Author: (none, default config)
+echo:Compiled: Dec 22 2019
+echo: Free Memory: 5437  PlannerBufferBytes: 1232
+echo:Hardcoded Default Settings Loaded
+echo:  G21    ; Units in mm
+
+echo:Filament settings: Disabled
+echo:  M200 D3.00
+echo:  M200 D0
+echo:Steps per unit:
+echo:  M92 X20.00 Y20.00 Z25.00 E500.00
+echo:Maximum feedrates (units/s):
+echo:  M203 X2000.00 Y2000.00 Z4000.00 E25.00
+echo:Maximum Acceleration (units/s2):
+echo:  M201 X10000 Y10000 Z1000 E10000
+echo:Acceleration (units/s2): P<print_accel> R<retract_accel> T<travel_accel>
+echo:  M204 P500.00 R10000.00 T500.00
+echo:Advanced: S<min_feedrate> T<min_travel_feedrate> B<min_segment_time_us> X<max_xy_jerk> Z<max_z_jerk> E<max_e_jerk>
+echo:  M205 S0.00 T0.00 B20000 X2.00 Y2.00 Z2.00 E5.00
+echo:Home offset:
+echo:  M206 X0.00 Y0.00 Z0.00
+echo:PID settings:
+echo:  M301 P22.20 I1.08 D114.00
+echo:Z-Probe Offset (mm):
+echo:  M851 Z0.00
+ received from port COM4
+2019-12-28 18:01:13,160 Port COM4 closed successfully
+2019-12-28 18:13:02,468 Port COM4: Initialization of a device started.
+2019-12-28 18:13:02,468 Port COM4: Expected welcome message:  
+2019-12-28 18:13:02,468 Port COM4: Attempted to close, unsuccessfully
+2019-12-28 18:13:02,471 Port COM4: Opened.
+2019-12-28 18:13:02,471 Port COM4: baudrate=115200.
+2019-12-28 18:13:02,471 Port COM4: timeout=0.1.
+2019-12-28 18:13:02,471 Port COM4: Welcome message received:
+2019-12-28 18:13:03,503 Port COM4: Function readAll(): Received message: 
+2019-12-28 18:13:03,503 start
+echo:Marlin 1.1.8
+
+echo: Last Updated: 2017-12-25 12:00 | Author: (none, default config)
+echo:Compiled: Dec 22 2019
+echo: Free Memory: 5437  PlannerBufferBytes: 1232
+echo:Hardcoded Default Settings Loaded
+echo:  G21    ; Units in mm
+
+echo:Filament settings: Disabled
+echo:  M200 D3.00
+echo:  M200 D0
+echo:Steps per unit:
+echo:  M92 X20.00 Y20.00 Z25.00 E500.00
+echo:Maximum feedrates (units/s):
+echo:  M203 X2000.00 Y2000.00 Z4000.00 E25.00
+echo:Maximum Acceleration (units/s2):
+echo:  M201 X10000 Y10000 Z1000 E10000
+echo:Acceleration (units/s2): P<print_accel> R<retract_accel> T<travel_accel>
+echo:  M204 P500.00 R10000.00 T500.00
+echo:Advanced: S<min_feedrate> T<min_travel_feedrate> B<min_segment_time_us> X<max_xy_jerk> Z<max_z_jerk> E<max_e_jerk>
+echo:  M205 S0.00 T0.00 B20000 X2.00 Y2.00 Z2.00 E5.00
+echo:Home offset:
+echo:  M206 X0.00 Y0.00 Z0.00
+echo:PID settings:
+echo:  M301 P22.20 I1.08 D114.00
+echo:Z-Probe Offset (mm):
+echo:  M851 Z0.00
+
+2019-12-28 18:13:04,228 Port COM4: Sending message: 
+2019-12-28 18:13:04,228 G28 Z
+2019-12-28 18:13:07,553 Port COM4: Function readBufferUntilMatch(): Received message: 
+2019-12-28 18:13:07,553 echo:busy: processing
+X:0.00 Y:0.00 Z:0.00 E:0.00 Count X:0 Y:0 Z:0
+ok
+
+2019-12-28 18:13:07,553 It was successfully matched with pattern ok
+
+2019-12-28 18:13:09,892 Port COM4: Successfully matched pattern
+2019-12-28 18:13:09,892 Marlin
+2019-12-28 18:13:09,892 To the welcome message: 
+2019-12-28 18:13:09,892 start
+echo:Marlin 1.1.8
+
+echo: Last Updated: 2017-12-25 12:00 | Author: (none, default config)
+echo:Compiled: Dec 22 2019
+echo: Free Memory: 5437  PlannerBufferBytes: 1232
+echo:Hardcoded Default Settings Loaded
+echo:  G21    ; Units in mm
+
+echo:Filament settings: Disabled
+echo:  M200 D3.00
+echo:  M200 D0
+echo:Steps per unit:
+echo:  M92 X20.00 Y20.00 Z25.00 E500.00
+echo:Maximum feedrates (units/s):
+echo:  M203 X2000.00 Y2000.00 Z4000.00 E25.00
+echo:Maximum Acceleration (units/s2):
+echo:  M201 X10000 Y10000 Z1000 E10000
+echo:Acceleration (units/s2): P<print_accel> R<retract_accel> T<travel_accel>
+echo:  M204 P500.00 R10000.00 T500.00
+echo:Advanced: S<min_feedrate> T<min_travel_feedrate> B<min_segment_time_us> X<max_xy_jerk> Z<max_z_jerk> E<max_e_jerk>
+echo:  M205 S0.00 T0.00 B20000 X2.00 Y2.00 Z2.00 E5.00
+echo:Home offset:
+echo:  M206 X0.00 Y0.00 Z0.00
+echo:PID settings:
+echo:  M301 P22.20 I1.08 D114.00
+echo:Z-Probe Offset (mm):
+echo:  M851 Z0.00
+
+2019-12-28 18:13:10,400 Port COM4: Closed successfully
