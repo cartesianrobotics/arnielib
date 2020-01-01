@@ -44,6 +44,7 @@ import glob
 
 # Importing sub-libraries of arnielib
 import low_level_comm as llc
+import cartesian as cart
 
 message_level = "verbose"
 robots = []
@@ -77,6 +78,7 @@ rack_dict = {
     "50_ml": {"rack_height": 94, "n_columns": 3, "n_rows": 2, "dist_between_wells_x": 50, "dist_between_wells_y": 50, "dist_center_to_well_00": [50, 25], "tube_height_above_rack": 21, "tube_height": 113, "tube_width": 27},
     "magnetic_eppendorf": {"rack_height": 94, "n_columns": 8, "n_rows": 2, "dist_between_wells_x": 15, "dist_between_wells_y": 78.6, "dist_center_to_well_00": [52.5, 34.8], "tube_height_above_rack": 13, "tube_height": 39, "tube_width": 10},
     }
+
 
 # Tip trays parameters
 EXPECTED_TIP_TRAY_HEIGHT = 68 # mm from the floor; physically measured
@@ -143,170 +145,8 @@ def find_tool_i_by_coord(robot, x_n, y_n):
     
     return -1
     
-class serial_device():
-    """
-    Parent class, handling basic communication with a device, 
-    be it an Arnie robot, or a tool or something else
-    """
-    
-    def __init__(self, port_name, baudrate=115200, timeout=0.1, eol="\r"):
-        
-        """
-        Initializes a devise to communicate through the serial port
-        (which is now most likely a USB emulation of a serial port)
-        
-        Inputs:
-            port_name 
-                The name of the port through which a robot or a tool is going to communicate.
-            baudrate
-                Speed of communication. For USB 115200 is good. Lower if communication becomes bad.
-            timeout
-                How long to wait (in seconds) for a device to respond before returning an error
-                0.1 seconds is default.
-            eol
-                character to pass at the end of a line when sending something to the device.
-                Default is '\r'
-        """
-        
-        self.eol=eol
-        self.recent_message = ""
-        self.description = {"class": serial_device, "message": "", "type": "", "mobile": False }
 
-        self.openSerialPort(port_name, baudrate, timeout)
-    
-    
-    def openSerialPort(self, port_name="", baudrate=115200, timeout=0.1):
-        """
-        Opens serial port
-        """
-        # Trying to use specifically provided port_name
-        # Otherwise using whatever internal number instance may already have.
-        if port_name != "":
-            com_port = port_name
-            self.port_name = port_name
-        else:
-            com_port = self.port_name
-        # Make sure port is closed
-        self.close()
-        # Opening robot instance
-        self.port = serial.Serial(com_port, baudrate, timeout=timeout)
-        # Cleaning input buffer from hello message
-        self.port.flushInput()
-        
-        while True:
-            msg = self.readAll()
-            if msg != "":
-                print("Msg: " + msg)
-                break
-                
-        self.recent_message = msg
-        
-    def close(self):
-        """
-        Will try to close Arnie port if it is open
-        """
-        if self in robots:
-            robots.remove(self)
-        
-        try:
-            self.port.close()
-        except:
-            print("ERROR: Couldn't close the port.")
-        
-    def write(self, expression, eol=None):
-        """
-        Sending an expression to a device. Expression is in str format.
-        Proper end of line will be sent. If eol specified here, it will be sent
-        Otherwise the one specified during initialization will be sent.
-        """
-        # Cleaning input buffer (so the buffer will contain only response of a device 
-        # to the command send within this function)
-        self.port.flushInput()
-        # Strip all EOL characters for consistency
-        expression = expression.strip()
-        if eol:
-            eol_to_send = eol
-        else:
-            eol_to_send = self.eol
-        # Add end of line
-        expression = expression + eol_to_send
-        # Encode to binary
-        expr_enc = expression.encode()
-        
-        message_log(self.port_name, expression, "write")
-        # Writing to robot
-        self.port.write(expr_enc)
-        
-        
-    # TODO: Inline this function so that people don't circumvent logging by using this function. 
-    def _read(self, number_of_bytes=1):
-        """
-        Same functionality as Serial.read()
-        """
-        return self.port.read(number_of_bytes).decode("utf-8")
-    
-    def readAll(self, timeout=0.1):
-        """
-        Function will wait until everything that the device send is read
-        """
-        # Give time for device to respond
-        time.sleep(timeout)
-        # Wait forever for device to return something
-        message=self._read()
-        #message=''
-        # Continue reading until device output buffer is empty
-        while self.port.inWaiting():
-            message += self._read()
-        
-        return message
-    
-    def readBufferUntilMatch(self, pattern):
-        """
-        This function will monitor serial port buffer, until the "pattern" occurs.
-        
-        Inputs:
-            - pattern - any string; put something that is expected to return from serial port
-            
-        Returns:
-            Everything which was read from the buffer before the pattern occurred, including the pattern.
-        """
-        
-        full_message = ""
-        while True:
-            message = self.readAll()
-            if message != "":
-                message_log(self.port_name, message, "read")
-                print("MESSAGE: " + repr(message))
-                full_message += message
-                if re.search(pattern=confirm_message, string=full_message):
-                    self.recent_message = full_message
-                    break
-        return full_message
-
-    # TODO: Rename this into "write", and rename "write"into "write_ignore_response".
-    def writeAndWait(self, expression, eol=None, confirm_message='ok\n'):
-        """
-        Function will write an expression to the device and wait for the proper response.
-        
-        Use this function to make the devise perform a physical operation and
-        make sure program continues after the operation is physically completed.
-        
-        Function will return an output message
-        """
-        self.write(expression, eol)
-        
-        full_message = ""
-        while True:
-            message = self.readAll()
-            if message != "":
-                message_log(self.port_name, message, "read")
-                print("MESSAGE: " + repr(message))
-                full_message += message
-                if re.search(pattern=confirm_message, string=full_message):
-                    self.recent_message = full_message
-                    break
-
-class pipettor(serial_device):
+class pipettor(llc.serial_device):
     # TODO: Factor this function out into serial_device.
     def write_wait(self, expression, confirm_message="Idle", eol=None):
         """
@@ -362,18 +202,18 @@ class pipettor(serial_device):
         self.write_wait("M3 S90")   # Raising servo lever
         self.readAll()
 
-class mobile_touch_probe(serial_device):
+class mobile_touch_probe(llc.serial_device):
     def isTouched(self):
         self.write('d')
         response = self.readAll()
         print("Mobile touch probe response: " + response)
         return bool(int(re.split(pattern='/r/n', string=response)[0]))
     
-class mobile_gripper(serial_device):
+class mobile_gripper(llc.serial_device):
     def operate_gripper(self, level):
         self.write(str(level))
     
-class stationary_touch_probe(serial_device):
+class stationary_touch_probe(llc.serial_device):
     def isTouched(self):
         self.write('d')
         response = self.readAll()
@@ -386,310 +226,16 @@ GenCenterXYZ = lambda xmin, xmax, ymin, ymax, zmin, zmax: (
     GenCenter(ymin, ymax),
     GenCenter(zmin, zmax),
 )
-        
-class arnie(serial_device):
-    def promote(self, speed_x=8000, speed_y=8000, speed_z=5000):
-        self.calibrated = False
-        self.speed = [speed_x, speed_y, speed_z]
-        self.tools = []
-        self.tool_devices = []
-        
-    def home(self, axes='ZXY'):
-        """
-        Home one of the axes, X, Y or Z.
-        Axis 
-            axis to home
-                x - home X axis
-                y - home Y axis
-                z - home Z axis
-        """
-        for axis in axes:
-            axis = axis.upper()
-            if axis != 'X' and axis != 'Y' and axis != 'Z' and axis != 'XYZ':
-                print ('Wrong axis specified. Please specify x, y or z. You specified: '+axis)
-            else:
-                self.writeAndWait('G28 '+axis)
-    
-    # TODO: This function was messed up. Unmess it. 
-    def moveAxis(self, axis, destination, speed=None):
-        if destination == 0:
-            return 
-        
-        axis=axis.upper()
-        if speed == None:
-            speed = self.speed[axis_index(axis)]
-        speed_cmd = 'F' + str(speed)
-        full_cmd = 'G0 ' + axis + str(destination) + ' ' + speed_cmd
-        
-        try:
-            self.writeAndWait(full_cmd)
-        except:
-            pass
-        return 
-        
-        # This was a failed attempt to make commands interruptable.
-        if axis == "X":
-            coordinate_i = 0
-        elif axis == "Y":
-            coordinate_i = 1
-        elif axis == "Z":
-            coordinate_i = 2
-        else:
-            print("ERROR: Unknown axis.")
-            return
-        
-        pos = self.getPosition()
-        if pos[coordinate_i] == destination:
-            return
-        elif destination > pos[coordinate_i]:
-            direction = 1
-        else:
-            direction = -1
-            
-        distance = abs(pos[coordinate_i] - destination)
-        next_step = pos[coordinate_i]
-        
-        while distance > 0:
-            next_step += direction
-            distance -= 1
-            cmd = 'G0 ' + axis + str(next_step) + ' ' + speed_cmd           
-            self.writeAndWait(cmd)
 
-        
-    def moveXY(self, x, y, speed=None):
-        if speed == None:
-            speed = self.speed[axis_index("X")]
-        full_cmd = 'G0 X' + str(x) + ' Y' + str(y) + ' F' + str(speed)
-        try:
-            self.writeAndWait(full_cmd)
-        except:
-            pass
-    
-    
-    def move(self, x=0, y=0, z=0, z_first=True, speed_xy=None, speed_z=None):
-        """
-        Move robot to an absolute coordinates.
-        
-        Spefify z_first = True if you want Z to move first; otherwise x an y will move first.
-        """
-        if speed_xy == None:
-            speed_xy = self.speed[axis_index("X")]
-        if speed_z == None:
-            speed_z = self.speed[axis_index("Z")]
-        
-        # Each of the functions attempting to move an axis to the coordinate. 
-        # If something goes wrong, like coordinate not specified, command is ignored
-        # and the next one is attempted.
-        if z_first:
-            self.moveAxis('Z', z, speed_z)
-            self.moveAxis('X', x, speed_xy)
-            self.moveAxis('Y', y, speed_xy)
-        else:
-            self.moveAxis('X', x, speed_xy)
-            self.moveAxis('Y', y, speed_xy)
-            self.moveAxis('Z', z, speed_z)
-    
-    def move_delta(self, dx=None, dy=None, dz=None, z_first=True, speed_xy=None, speed_z=None):
-        """
-        Moves the robot arbitrarily to the current position
-        """
-        # Getting current absolute position
-        x, y, z = self.getPosition()
-        
-        # Assigning zero movement to coordinates which are not provided
-        if dx is None:
-            dx = 0
-        if dy is None:
-            dy = 0
-        if dz is None:
-            dz = 0
-            
-        # Calculating new absolute position for Arnie
-        new_x = x + dx
-        new_y = y + dy
-        new_z = z + dz
-        
-        # Moving Arnie
-        self.move(new_x, new_y, new_z, z_first=z_first, speed_xy=speed_xy, speed_z=speed_z)
-    
-    def openTool(self):
-        """Docker opens to accept a tool"""
-        self.write('M280 P1 S10')
-        time.sleep(3)
-        
-    def closeTool(self):
-        """Docker closes, fixing a tool in place"""
-        self.write('M280 P1 S80')
-        time.sleep(1.5)
-    
-    def getPosition(self):
-        # TODO: Fix this.
-        self.writeAndWait("M114")
-        msg = self.recent_message
-        msg_list = re.split(pattern=' ', string=msg)
-        x_str = msg_list[0]
-        y_str = msg_list[1]
-        z_str = msg_list[2]
-        #print (x_str, y_str, z_str)
-        x = float(re.split(pattern="\:", string=x_str)[1])
-        y = float(re.split(pattern="\:", string=y_str)[1])
-        z = float(re.split(pattern="\:", string=z_str)[1])
-        return x, y, z
-    
-        
-    def approachToolPosition(self, x, y, z, speed_xy=None, speed_z=None):
-        """
-        Moves robot to specified coordinates, where the tool is expected to be.
-        Alternatively, moves robot WITH a tool to its empty slot
-        Coordinates for both operations should be the same.
-        Thif function will not engage docker, as one need to make sure the tool is at the right position
-        """
-        
-        self.move(x, y, z, z_first=False, speed_xy=speed_xy, speed_z=speed_z)
-    
-    def approachToolAtSlot(self, tool_at_slot, speed_xy=None, speed_z=None):
-        """
-        Moves robot towards the tool, which object is passed in "tool_at_slot". 
-        Same as "approachToolPosition", but using the object of tool_at_slot class
-        """
-        x, y, z = tool_at_slot.getCenterCoordinates()
-        self.move(x, y, z, z_first=False, speed_xy=speed_xy, speed_z=speed_z)
-    
-    
-    def get_tool(self, x_n, y_n, z_init=1, z_dest_delta=0):
-        """
-        Engages with a tool, using tool instance for guidance
-        """
-        if self.current_tool != None:
-            self.return_tool()
-        
-        tool_to_get = None
-        for saved_tool in self.tools:
-            if x_n == saved_tool["n_x"] and y_n == saved_tool["n_y"]:
-                tool_to_get = deepcopy(saved_tool)
-                break
-        
-        if tool_to_get == None:
-            print("ERROR: slot (" + str(x_n) + ", " + str(y_n) + ") doesn't contain any tool.")
-            return 
-        
-        dest = tool_to_get["position"]
-        
-        self.openTool()
-        self.move(z=z_init)
-        #self.home("Z")
-        self.move(x=dest[0], y=dest[1])
-        self.move(z=dest[2] + z_dest_delta) # z_dest_delta corrects for the error in instrument height estimation
-        self.closeTool()
-        self.current_tool = saved_tool
-        #self.home("Z")
-        self.move(z=z_init)
-        
-        # TODO: handle the case when the port is physically not connected
-        while True:
-            ports = llc.listSerialPorts()
-            if len(ports) > 0:
-                break
-        
-        for port in ports:
-            self.current_tool_device = connect_tool(port, self)
-        
-        # TODO: Uncomment the following or write some other check for a device that couldn't connect. 
-        
-        #self.current_tool_device = 
-        
-        # Attempting to initialize the tool
-        #attempt_success    ful = self.softInitToolAttempt(tool, total_attempts=2)
-        #if not attempt_successful:
-        #   attempt_successful = self.hardInitToolAttempt(tool, total_attempts=3)
-        #if attempt_successful:
-            # Locking tool
-        #   self.closeTool()
-            # Moving back up
-        #   self.move(z=0, speed_z=speed_z)
-        #else:
-        #   self.openTool()
-        #   print("Failed to pickup tool. Program stopped.")
-            
-    
-    def return_tool(self, z_init=1):
-        """
-        Returns tool back to its place.
-        The place is provided either with tool instance, or simply as position_tuple (x, y, z)
-        """
-        if self.current_tool == None:
-            print("ERROR: Trying to return tool, but no tool is connected.")
-        
-        if self.current_tool["type"] == "pipettor":
-            self.current_tool_device.home()
-            time.sleep(5)
-
-        if self.current_tool["type"] == "mobile_gripper":
-            self.current_tool_device.write("1")
-            time.sleep(2)
-        
-        dest = self.current_tool["position"]
-        self.move(z=z_init)
-        #self.home("Z")
-        self.move(x=dest[0], y=dest[1])
-        self.move(z=dest[2])
-        self.openTool()
-#       time.sleep(5)   # Short delay after placing an instrument into the holder, to prevent premature Z lifting
-        self.move(z=z_init)
-        self.home("Z")
-        self.current_tool = None
-        self.current_tool_device = None
-
-    # TODO: This function is never used. Clean it? 
-    def softInitToolAttempt(self, tool, total_attempts=4, wait_time=2, current_attempt=0):
-        # Attempt to initialize tool several times without robot movement
-        # Waiting before attempt, so electronics has time to connect
-        time.sleep(wait_time)
-        try:
-            tool.openSerialPort()
-            attempt_successful=1
-        except:
-            print("Tool initialization failed, attempting again")
-            if total_attempts > current_attempt:
-                attempt_successful=0
-                current_attempt += 1
-                attempt_successful = self.softInitToolAttempt(
-                    tool=tool,
-                    total_attempts=total_attempts, 
-                    wait_time=wait_time, 
-                    current_attempt=current_attempt)
-            else:
-                attempt_successful = 0
-                print('Tool initialization failed after '+str(current_attempt)+' attempts')
-        return attempt_successful
-    
-    # TODO: This function is never used. Clean it? 
-    def hardInitToolAttempt(self, tool, total_attempts=3, current_attempt=0):
-        # Attempt to re-connect to the tool. 
-        # To be used after failed initialization
-        self.openTool()
-        # Moving Arnie up and down for an attempt to physically reconnect
-        self.move_delta(dz=-300)
-        self.move_delta(dz=300)
-        
-        attempt_successful = self.softInitToolAttempt(tool, total_attempts=1)
-        if not attempt_successful and total_attempts > current_attempt:
-            current_attempt += 1
-            attempt_successful = 0
-            attempt_successful = self.hardInitToolAttempt(
-                tool=tool, total_attempts=total_attempts, current_attempt=current_attempt)
-        elif not attempt_successful and total_attempts <= current_attempt:
-            print("Repeated tool pickup failed after "+str(current_attempt)+" attempts")
-            attempt_successful = 0
-        return attempt_successful
 
 device_type_descriptions = [
-    {"class": arnie, "message": "Marlin", "type": "", "mobile": False}, 
+    {"class": cart.arnie, "message": "Marlin", "type": "", "mobile": False}, 
     {"class": stationary_touch_probe, "message": "stationary touch probe", "type": "stationary_probe", "mobile": False}, 
     {"class": mobile_touch_probe, "message": "mobile touch probe", "type": "mobile_probe", "mobile": True},
     {"class": pipettor, "message": "Servo", "type": "pipettor", "mobile": True},
     {"class": mobile_gripper, "message": "mobile circular gripper", "type": "mobile_gripper", "mobile": True},
     ]
+
 
 def move_delta_mm(robot, dx=0, dy=0, dz=0):
     if abs(dx) > 0.001 and robot.params["units_in_mm"][0] == -1:
@@ -2260,12 +1806,13 @@ def load_tools(robot):
     file.close()
 
 def connect_tool(port_name, robot=None):
-    device = serial_device(port_name)
-    msg = device.recent_message
+    device = llc.serial_device(port_name)
+    #msg = device.recent_message
 
     recognized_desc = None
     for desc in device_type_descriptions:
-        if re.search(pattern=desc["message"], string=msg):
+        if device.isWelcomeMessageMatches(desc["message"]):
+        #if re.search(pattern=desc["message"], string=msg):
             recognized_desc = desc
             break
         
@@ -2276,8 +1823,10 @@ def connect_tool(port_name, robot=None):
     device.__class__ = recognized_desc["class"]
     device.description = recognized_desc
     
-    if recognized_desc["class"] == arnie:
-        device.promote()
+    try:
+        device.firstActions(home=True)
+    except AttributeError:
+        pass
     
     if robot != None:
         if recognized_desc["mobile"]:
@@ -2296,6 +1845,8 @@ def connect_tool(port_name, robot=None):
     
     return device
 
+
+
 def connect():
     ports = llc.listSerialPorts()
     robot = None
@@ -2303,7 +1854,7 @@ def connect():
     
     for port_name in ports:
         device = connect_tool(port_name)
-        if device.__class__ == arnie:
+        if device.__class__ == cart.arnie:
             robot = device
         else: 
             available_devices.append(device)
@@ -2342,8 +1893,6 @@ def connect():
 
     robots.append(robot)
     print("Connected. Homing.")
-    time.sleep(1)
-    robot.home()
         
     log("Start")
     log(str(datetime.now()))

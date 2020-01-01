@@ -137,15 +137,27 @@ class serial_device():
         """
         right_index = None
         for name in names_list:
-            if re.search(pattern=name, string=self.welcome_message):
-                logging.info("Port %s: Successfully matched pattern", self.port_name)
-                logging.info(name)
-                logging.info("To the welcome message: ")
-                logging.info(self.welcome_message)
-                
+            if self.isWelcomeMessageMatches(name):
                 right_index = names_list.index(name)
         return right_index
     
+    
+    def isWelcomeMessageMatches(self, expected_welcome_message):
+        """
+        Compares welcome message returned from the device,
+        with the expected_welcome_message provided by a user.
+        
+        Returns True if match found.
+        """
+        matched = False
+        if re.search(pattern=expected_welcome_message, string=self.welcome_message):
+            matched = True
+            logging.info("Port %s: Successfully matched pattern", self.port_name)
+            logging.info(expected_welcome_message)
+            logging.info("To the welcome message: ")
+            logging.info(self.welcome_message)
+        
+        return matched
     
     def write(self, expression, eol=None):
         """
@@ -298,5 +310,3 @@ def matchPortsWithDevices(ports_list, device_matchline_dict):
                 device_port_dict[key] = port
                 
     return device_port_dict
-        
-        
