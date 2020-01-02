@@ -7,6 +7,8 @@ Part of ArnieLib.
 Sergii Pochekailov
 """
 
+import re
+import time
 import logging
 
 # Local parts of ArnieLib imports
@@ -324,7 +326,7 @@ class arnie(llc.serial_device):
         self.approachToolPosition(x=x, y=y, z=z, speed_xy=speed_xy, speed_z=speed_z)
     
     
-    def get_tool_at_coord(self, x, y, z, z_init, speed_xy=None, speed_z=None):
+    def getToolAtCoord(self, x, y, z, z_init, speed_xy=None, speed_z=None):
         """
         Get tool positioned at known absolute coordinates x, y, z.
         """
@@ -407,6 +409,24 @@ class arnie(llc.serial_device):
         #else:
         #   self.openTool()
         #   print("Failed to pickup tool. Program stopped.")
+
+
+    def returnToolToCoord(self, x, y, z, z_init, speed_xy=None, speed_z=None):
+        """
+        Returns tool positioned at known absolute coordinates x, y, z.
+        Operation will perform regardless of what state the tool is, 
+        where there is a connection with it or whether it is initilized.
+        User is responsible for prepping the tool for return, if applicable.
+        """
+        
+        # Moving robot to the safe height, where it will not accidentally touch anything.
+        self.move(z=z_init)
+        # Moving to the tool release position
+        self.move(x=x, y=y, z=z, z_first=False, speed_xy=speed_xy, speed_z=SPEED_Z_MOVING_DOWN)
+        # Opening tool
+        self.openTool()
+        # Moving back to the safe position
+        self.move(z=z_init)
             
     
     def return_tool(self, z_init=1):
