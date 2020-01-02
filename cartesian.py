@@ -353,6 +353,8 @@ class arnie(llc.serial_device):
         
         self.move(z=z_init)
         
+        return device
+        
     
     
     def get_tool(self, x_n, y_n, z_init=1, z_dest_delta=0):
