@@ -22,6 +22,7 @@ WELCOME_MESSAGE = "Marlin"
 SPEED_X = 8000
 SPEED_Y = 8000
 SPEED_Z = 5000
+SPEED_Z_MOVING_DOWN = 15000 # Robot can move down much faster than up.
 
 # Homing command
 # Example: G28 - homes all axis (careful, better first home Z axis, then others)
@@ -311,6 +312,7 @@ class arnie(llc.serial_device):
         Thif function will not engage docker, as one need to make sure the tool is at the right position
         """
         
+        logging.info("Approaching tool position at coordinates x=%s, y=%s, z=%s", x, y, z)
         self.move(x, y, z, z_first=False, speed_xy=speed_xy, speed_z=speed_z)
     
     def approachToolAtSlot(self, tool_at_slot, speed_xy=None, speed_z=None):
@@ -319,7 +321,36 @@ class arnie(llc.serial_device):
         Same as "approachToolPosition", but using the object of tool_at_slot class
         """
         x, y, z = tool_at_slot.getCenterCoordinates()
-        self.move(x, y, z, z_first=False, speed_xy=speed_xy, speed_z=speed_z)
+        self.approachToolPosition(x=x, y=y, z=z, speed_xy=speed_xy, speed_z=speed_z)
+    
+    
+    def get_tool_at_coord(self, x, y, z, z_init, speed_xy=None, speed_z=None):
+        """
+        Get tool positioned at known absolute coordinates x, y, z.
+        """
+        
+        # Producing a list of present serial ports BEFORE engaging a new tool
+        initial_ports_list = llc.listSerialPorts()
+        
+        # Moving to the save height, so nothing is kicked by a robot
+        self.move(z=z_init, speed_z=None)
+        # Opening docker
+        self.openTool()
+        # Moving to the tool coordinate
+        self.move(x=x, y=y, z=z, z_first=False, speed_xy=speed_xy, speed_z=SPEED_Z_MOVING_DOWN)
+        # Closing docker (hopefully gripping the tool)
+        self.closeTool()
+        
+        # Obtaining updated list of serial devices. Now a new device should be present there.
+        updated_ports_list = llc.listSerialPorts()
+        # Obtaining newly appeared port
+        new_port = list(set(updated_ports_list) - set(initial_ports_list))[0]
+        
+        # Connecting to the device
+        device = llc.serial_device(new_port)
+        
+        self.move(z=z_init)
+        
     
     
     def get_tool(self, x_n, y_n, z_init=1, z_dest_delta=0):
