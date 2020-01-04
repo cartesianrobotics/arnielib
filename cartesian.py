@@ -326,7 +326,7 @@ class arnie(llc.serial_device):
         x, y, z = tool_at_slot.getCenterCoordinates()
         self.approachToolPosition(x=x, y=y, z=z, speed_xy=speed_xy, speed_z=speed_z)
     
-    
+    # TODO: Try to move it to the "tool" class
     def getToolAtCoord(self, x, y, z, z_init=0, speed_xy=None, speed_z=None):
         """
         Get tool positioned at known absolute coordinates x, y, z.
@@ -416,7 +416,7 @@ class arnie(llc.serial_device):
                 coordinates_obtained = True
             except:
                 pass
-        else
+        else:
             # Trying to get coordinates from the object provided as an argument
             try:
                 [x, y, z] = device['position']

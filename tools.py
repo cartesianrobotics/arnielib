@@ -3,10 +3,14 @@ Module handling tools for the robot, both mobile and floor-based
 """
 
 import logging
+from copy import deepcopy
 
 # Internal arnielib modules
 import low_level_comm as llc
+import param
+import cartesian as cart    # TODO: Remove it when finishing refactoring.
 
+SPEED_Z_MOVING_DOWN = 15000 # Robot can move down much faster than up.
 
 default_slot = {
     "LT": [-1, -1], 
@@ -28,11 +32,12 @@ default_tool = {
 
 
 class tool(llc.serial_device):
-"""
-Parent class, handling tools
-"""
-    def __init__(self, robot, device=None, com_port_number=None, 
-                 welcome_message=""):
+    """
+    Parent class, handling tools
+    """
+    
+    def __init__(self, robot, pick_up=True, device_name='', device=None, com_port_number=None, 
+                 welcome_message="", z_init=0):
         """
         Handles any general tool properties; that any tool will have.
         This class will rarely be used by itself, instead, it is
@@ -42,20 +47,35 @@ Parent class, handling tools
         # Tool will get control of the robot to tell it where to move itself,
         # or what operation may be needed.
         self.robot = robot
-        
-        # When initializing, one may provide a device
-        # Device is usually serial_device instance, without specifically
-        # indicating what is this. When provided, serial_device
-        # will get upgraded to the current device type
-        if device is not None:
-            device = self
-        # If it is not connected yet, or device may not be known, 
-        # it may provide com port number to establish connection
-        else:
-            super().__init__(com_port_number, welcome_message=welcome_message)
-        
-        
+        super().__init__(com_port_number, welcome_message=welcome_message)
 
+        
+    @classmethod
+    def getToolAtCoord(cls, robot, x, y, z, z_init=0, speed_xy=None, speed_z=None, welcome_message=""):
+        """
+        Get tool positioned at known absolute coordinates x, y, z.
+        """
+        
+        # Producing a list of present serial ports BEFORE engaging a new tool
+        initial_ports_list = llc.listSerialPorts()
+        
+        # Moving to the save height, so nothing is kicked by a robot
+        robot.move(z=z_init, speed_z=None)
+        # Opening docker
+        robot.openTool()
+        # Moving to the tool coordinate
+        robot.move(x=x, y=y, z=z, z_first=False, 
+            speed_xy=speed_xy, speed_z=SPEED_Z_MOVING_DOWN)
+        # Closing docker (hopefully gripping the tool)
+        robot.closeTool()
+        robot.move(z=z_init)
+        
+        # Obtaining updated list of serial devices. Now a new device should be present there.
+        updated_ports_list = llc.listSerialPorts()
+        # Obtaining newly appeared port
+        new_port = list(set(updated_ports_list) - set(initial_ports_list))[0]
+        
+        return cls(robot=robot, com_port_number=new_port, welcome_message=welcome_message)
 
 
 class pipettor(tool):
@@ -121,6 +141,13 @@ class mobile_touch_probe(tool):
         response = self.readAll()
         print("Mobile touch probe response: " + response)
         return bool(int(re.split(pattern='/r/n', string=response)[0]))
+        
+    def pickUpTouchProbe(self):
+        """
+        Locates and picks up a touch probe
+        """
+        [x, y, z] = param.getToolDockingPoint('mobile_probe')
+        
 
     
 class mobile_gripper(tool):
