@@ -1,4 +1,14 @@
+"""
+This module handles parameters storage and basic manipulation
+"""
+
+
 import json
+import os
+from shutil import copyfile
+import re
+from datetime import datetime
+import logging
 
 DEFAULT_FLOOR_CALIBR_FILE = "floor.json"
 DEFAULT_TOOL_CALIBR_FILE = "tools.json"
@@ -37,13 +47,115 @@ def getSlotCalibrationData(n_x, n_y,
     if slots_data is None:
         # Opening data from default storage
         # If file does not exist, function exits
-        try:
-            filehandler = open(floor_calibr_file, "r")
-        except FileNotFoundError:
-            return
-        # Loading structured data
-        floor_data = json.loads(filehandler.read())
+        floor_data = loadData(floor_calibr_file)
         slots_data = floor_data['slots']
     
     return slots_data[n_x][n_y]
     
+
+def replaceFile(path_to_replace, data):
+    """
+    Replaces a file or creates a new one with given name
+    """
+    
+    if os.path.exists(path_to_replace):
+        time_str = str(datetime.now()).replace(":", "_")
+        filename = re.split(pattern="/", string=path_to_replace)[-1]
+        new_filename = time_str + filename
+        new_path = path_to_replace.replace(filename, new_filename)
+        copyfile(path_to_replace, new_path)
+        
+    filehandler = open(path_to_replace, 'w')
+    filehandler.write(json.dumps(data))
+    filehandler.close()
+
+    
+def loadData(path):
+    try:
+        filehandler = open(path, "r")
+    except FileNotFoundError:
+        return
+        
+    return json.loads(filehandler.read())
+
+    
+def calcSquareSlotCenterFromVertices(n_x, n_y, 
+                                   slots_data=None, 
+                                   floor_calibr_file=DEFAULT_FLOOR_CALIBR_FILE):
+    """
+    Given vertices X and Y coordinates, will
+    calculate X and Y coordinates of the center of the slot.
+    
+    Data should look like that:
+    {'LB': [167.95000000000002, 122.15],
+    'RT': [317.36, 11.150000000000002],
+    'LT': [168.95000000000002, 10.950000000000003],
+    'floor_z': 604.1,
+    'RB': [316.36, 122.35]}
+    """
+    slot = getSlotCalibrationData(n_x, n_y, 
+                                  slots_data=slots_data, floor_calibr_file=floor_calibr_file)
+    return [(slot['LT'][0] + slot['RB'][0]) / 2, (slot['LT'][1] + slot['RB'][1]) / 2]
+    
+
+def getSlotZ(n_x, n_y, 
+             slots_data=None, 
+             floor_calibr_file=DEFAULT_FLOOR_CALIBR_FILE):
+             
+    """
+    Will return Z coordinate of the slot.
+    
+    Data should look like that:
+    {'LB': [167.95000000000002, 122.15],
+    'RT': [317.36, 11.150000000000002],
+    'LT': [168.95000000000002, 10.950000000000003],
+    'floor_z': 604.1,
+    'RB': [316.36, 122.35]}
+    """    
+    slot = getSlotCalibrationData(n_x, n_y, 
+                                  slots_data=slots_data, floor_calibr_file=floor_calibr_file)
+    return slot['floor_z']
+
+    
+def getToolByName(name, data):
+    
+    for tool in data:
+        try:
+            saved_tool_name = tool['type']
+            if saved_tool_name == name:
+                return tool
+        except:
+            pass
+
+            
+def getToolBySlot(x, y, data):
+    for tool in data:
+        try:
+            saved_x = tool['n_x']
+            saved_y = tool['n_y']
+
+            if (saved_x == x) and (saved_y == y):
+                return tool
+        except:
+            pass
+
+    
+def getToolDockingPoint(toolname=None, slot=None, data=None, tool_file=DEFAULT_TOOL_CALIBR_FILE):
+    """
+    Will try to load docking coordinates saved in the file; 
+    if not successful, will try to calculate from provided data.
+    """
+    
+    # If custom data are not provided, use those from standard file
+    if data is None:
+        data = loadData(tool_file)
+
+    if toolname is not None:
+        tool_data = getToolByName(toolname, data)
+    elif slot is not None:
+        print ("Triggered")
+        tool_data = getToolBySlot(slot[0], slot[1], data)
+    else:
+        return
+    
+    return tool_data['position']

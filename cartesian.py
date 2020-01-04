@@ -13,6 +13,7 @@ import logging
 
 # Local parts of ArnieLib imports
 import low_level_comm as llc
+import param    # Handles calibration data
 
 # Constants
 # ===============================
@@ -326,7 +327,7 @@ class arnie(llc.serial_device):
         self.approachToolPosition(x=x, y=y, z=z, speed_xy=speed_xy, speed_z=speed_z)
     
     
-    def getToolAtCoord(self, x, y, z, z_init, speed_xy=None, speed_z=None):
+    def getToolAtCoord(self, x, y, z, z_init=0, speed_xy=None, speed_z=None):
         """
         Get tool positioned at known absolute coordinates x, y, z.
         """
@@ -356,61 +357,29 @@ class arnie(llc.serial_device):
         return device
         
     
-    
-    def get_tool(self, x_n, y_n, z_init=1, z_dest_delta=0):
+    def getTool(self, x_n=None, y_n=None, 
+        tool_name=None, tool_data=None, data_path=None, 
+        z_init=0, z_dest_delta=0, speed_xy=None, speed_z=None):
         """
-        Engages with a tool, using tool instance for guidance
+        Get tool positioned at specified (x_n, y_n) slot
         """
-        if self.current_tool != None:
-            self.return_tool()
         
-        tool_to_get = None
-        for saved_tool in self.tools:
-            if x_n == saved_tool["n_x"] and y_n == saved_tool["n_y"]:
-                tool_to_get = deepcopy(saved_tool)
-                break
+        if data_path is None:
+            data_path = param.DEFAULT_TOOL_CALIBR_FILE
         
-        if tool_to_get == None:
-            print("ERROR: slot (" + str(x_n) + ", " + str(y_n) + ") doesn't contain any tool.")
-            return 
+        if tool_data is None:
+            tool_data = param.loadData('tools.json')
+            
+        if tool_name is not None:
+            [x, y, z] = param.getToolDockingPoint(toolname=tool_name, data=tool_data, tool_file=data_path)
+        elif (x_n is not None) and (y_n is not None):
+            [x, y, z] = param.getToolDockingPoint(slot=[x_n, y_n], data=tool_data, tool_file=data_path)
+            
+        device = self.getToolAtCoord(
+            x=x, y=y, z=z+z_dest_delta, z_init=z_init, speed_xy=speed_xy, speed_z=speed_z)
+        self.current_tool = device  # Object of robot class now stores current tool
         
-        dest = tool_to_get["position"]
-        
-        self.openTool()
-        self.move(z=z_init)
-        #self.home("Z")
-        self.move(x=dest[0], y=dest[1])
-        self.move(z=dest[2] + z_dest_delta) # z_dest_delta corrects for the error in instrument height estimation
-        self.closeTool()
-        self.current_tool = saved_tool
-        #self.home("Z")
-        self.move(z=z_init)
-        
-        # TODO: handle the case when the port is physically not connected
-        while True:
-            ports = llc.listSerialPorts()
-            if len(ports) > 0:
-                break
-        
-        for port in ports:
-            self.current_tool_device = connect_tool(port, self)
-        
-        # TODO: Uncomment the following or write some other check for a device that couldn't connect. 
-        
-        #self.current_tool_device = 
-        
-        # Attempting to initialize the tool
-        #attempt_success    ful = self.softInitToolAttempt(tool, total_attempts=2)
-        #if not attempt_successful:
-        #   attempt_successful = self.hardInitToolAttempt(tool, total_attempts=3)
-        #if attempt_successful:
-            # Locking tool
-        #   self.closeTool()
-            # Moving back up
-        #   self.move(z=0, speed_z=speed_z)
-        #else:
-        #   self.openTool()
-        #   print("Failed to pickup tool. Program stopped.")
+        return self.current_tool
 
 
     def returnToolToCoord(self, x, y, z, z_init, speed_xy=None, speed_z=None):
@@ -429,35 +398,57 @@ class arnie(llc.serial_device):
         self.openTool()
         # Moving back to the safe position
         self.move(z=z_init)
-            
+        
     
-    def return_tool(self, z_init=1):
+    def returnTool(self, x_n=None, y_n=None, z_dest_delta=0, z_init=0,
+        tool_name=None, tool_data=None, data_path=None,
+        device=None, speed_xy=None, speed_z=None):
         """
-        Returns tool back to its place.
-        The place is provided either with tool instance, or simply as position_tuple (x, y, z)
+        Returns a tool, trying to find where to return from different sources
         """
-        if self.current_tool == None:
-            print("ERROR: Trying to return tool, but no tool is connected.")
         
-        if self.current_tool["type"] == "pipettor":
-            self.current_tool_device.home()
-            time.sleep(5)
-
-        if self.current_tool["type"] == "mobile_gripper":
-            self.current_tool_device.write("1")
-            time.sleep(2)
+        # trying to get coordinates from the device object
+        # The object may not contain coordinates though
+        coordinates_obtained = False
+        if device is None:
+            try:
+                [x, y, z] = self.current_tool['position']
+                coordinates_obtained = True
+            except:
+                pass
+        else
+            # Trying to get coordinates from the object provided as an argument
+            try:
+                [x, y, z] = device['position']
+                coordinates_obtained = True
+            except:
+                pass
         
-        dest = self.current_tool["position"]
-        self.move(z=z_init)
-        #self.home("Z")
-        self.move(x=dest[0], y=dest[1])
-        self.move(z=dest[2])
-        self.openTool()
-#       time.sleep(5)   # Short delay after placing an instrument into the holder, to prevent premature Z lifting
-        self.move(z=z_init)
-        self.home("Z")
-        self.current_tool = None
-        self.current_tool_device = None
+        # If unable to get coordinates from the object itself, 
+        # trying to find them by the device name using calibration
+        # data stored on drive
+        if (not coordinates_obtained) and (tool_name is not None):
+            try:
+                [x, y, z] = param.getToolDockingPoint(tool_name)
+                coordinates_obtained = True
+            except:
+                pass
+        # Trying to get by the slot given it is provided
+        elif (not coordinates_obtained) and (x_n is not None) and (y_n is not None):
+            try:
+                [x, y, z] = param.getToolDockingPoint(tool_name)
+                coordinates_obtained = True
+            except:
+                pass
+        
+        if coordinates_obtained:
+            self.returnToolToCoord(x=x, y=y, z=z, z_init=z_init, speed_xy=speed_xy, speed_z=speed_z)
+            self.current_tool = None    # Removing info about current tool from robot object
+                # As the tool is no longer engaged with the robot.
+        else:
+            logging.error("Cartesian returnTool(): Unable to find coordinates where to place the tool.")
+            logging.error("Cartesian returnTool(): Use returnToolToCoord() instead. ")
+        
 
     # TODO: This function is never used. Clean it? 
     def softInitToolAttempt(self, tool, total_attempts=4, wait_time=2, current_attempt=0):
