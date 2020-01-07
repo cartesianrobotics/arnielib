@@ -308,5 +308,7 @@ def matchPortsWithDevices(ports_list, device_matchline_dict):
         for key, value in device_matchline_dict.items():
             if correct_pattern == value:
                 device_port_dict[key] = port
+        # Closing port after matching.
+        s.close()
                 
     return device_port_dict

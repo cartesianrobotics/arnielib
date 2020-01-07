@@ -36,7 +36,7 @@ class tool(llc.serial_device):
     Parent class, handling tools
     """
     
-    def __init__(self, robot, com_port_number=None, 
+    def __init__(self, robot, com_port_number=None, tool_name="",
                  welcome_message=""):
         """
         Handles any general tool properties; that any tool will have.
@@ -58,8 +58,20 @@ class tool(llc.serial_device):
         # Tool will get control of the robot to tell it where to move itself,
         # or what operation may be needed.
         self.robot = robot
+        
+        # Trying to find proper port from the list of existing ports,
+        # Using device name and welcome message
+        if com_port_number is None:
+            ports_list = llc.listSerialPorts()
+            matched_ports_dicts = llc.matchPortsWithDevices(ports_list, {tool_name: welcome_message})
+            try:
+                com_port_number = matched_ports_dicts[tool_name]
+            except:
+                logging.error("Tool initialization: No serial port name provided.")
+                return
+        
         super().__init__(com_port_number, welcome_message=welcome_message)
-
+        
         
     @classmethod
     def getToolAtCoord(cls, robot, x, y, z, z_init=0, speed_xy=None, speed_z=None, welcome_message=""):
@@ -244,9 +256,6 @@ class mobile_touch_probe(tool):
         return super().getTool(robot, 
             tool_name=cls.tool_name, welcome_message=cls.welcome_message)
 
-
-
-
     
 class mobile_gripper(tool):
     def operate_gripper(self, level):
@@ -254,6 +263,13 @@ class mobile_gripper(tool):
 
     
 class stationary_touch_probe(tool):
+
+    def __init__(self, robot, com_port_number=None, tool_name="stationary_probe",
+                 welcome_message="stationary touch probe"):
+        super.__init__(robot=robot, com_port_number=com_port_number, tool_name=tool_name,
+            welcome_message=welcome_message)
+        
+
     def isTouched(self):
         self.write('d')
         response = self.readAll()

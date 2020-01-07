@@ -34,9 +34,9 @@ HOMING_CMD = 'G28'
 
 # Operations with a tool
 OPEN_TOOL_G_CODE = "M280 P1 S10"
-OPEN_TOOL_DELAY = 3 # seconds
+OPEN_TOOL_DELAY = 2 # seconds
 CLOSE_TOOL_G_CODE = "M280 P1 S80"
-CLOSE_TOOL_DELAY = 3 # seconds
+CLOSE_TOOL_DELAY = 2 # seconds
 
 # Moving G-code command: G0 X<value> Y<value> Z<value> F<value>
 
@@ -269,7 +269,8 @@ class arnie(llc.serial_device):
         logging.info("Arnie openTool: Opening tool docker to accept a new tool.")
         logging.info("Arnie openTool: G-code sent: %s, delay %s seconds.", open_tool_G_code, sleep_time)
         
-        self.write(open_tool_G_code)
+        time.sleep(0.5) # Checking whether firmware needs some time before accepting the next commnand
+        self.writeAndWait(open_tool_G_code)
         time.sleep(sleep_time)
         
     def closeTool(self):
@@ -281,7 +282,8 @@ class arnie(llc.serial_device):
         logging.info("Arnie closeTool: G-code sent: %s, delay %s seconds.", close_tool_G_code, sleep_time)
         self.getPosition() # This is done so the actual position is recorded in the log file.
         
-        self.write(close_tool_G_code)
+        time.sleep(0.5) # Checking whether firmware needs some time before accepting the next commnand
+        self.writeAndWait(close_tool_G_code)
         time.sleep(sleep_time)
     
     def getPosition(self):
