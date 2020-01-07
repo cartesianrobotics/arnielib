@@ -34,9 +34,9 @@ HOMING_CMD = 'G28'
 
 # Operations with a tool
 OPEN_TOOL_G_CODE = "M280 P1 S10"
-OPEN_TOOL_DELAY = 3 # seconds
+OPEN_TOOL_DELAY = 1 # seconds
 CLOSE_TOOL_G_CODE = "M280 P1 S80"
-CLOSE_TOOL_DELAY = 3 # seconds
+CLOSE_TOOL_DELAY = 1 # seconds
 
 # Moving G-code command: G0 X<value> Y<value> Z<value> F<value>
 

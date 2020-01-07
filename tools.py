@@ -37,8 +37,8 @@ class tool(llc.serial_device):
     Parent class, handling tools
     """
     
-    def __init__(self, robot, com_port_number=None, tool_name="",
-                 welcome_message=""):
+    def __init__(self, robot, com_port_number=None, tool_name=None,
+                 welcome_message=None):
         """
         Handles any general tool properties; that any tool will have.
         This class will rarely be used by itself, instead, it is
@@ -59,23 +59,28 @@ class tool(llc.serial_device):
         # Tool will get control of the robot to tell it where to move itself,
         # or what operation may be needed.
         self.robot = robot
-        self.tool_name = tool_name
-        self.welcome_message = welcome_message
+        if tool_name is not None:
+            self.tool_name = tool_name
+        try:
+            self.getDockingPointByToolName(tool_name=self.tool_name)
+        except:
+            pass
+        if welcome_message is not None:
+            self.welcome_message = welcome_message
         
         # Trying to find proper port from the list of existing ports,
         # Using device name and welcome message
         if com_port_number is None:
             ports_list = llc.listSerialPorts()
-            matched_ports_dicts = llc.matchPortsWithDevices(ports_list, {tool_name: welcome_message})
+            matched_ports_dicts = llc.matchPortsWithDevices(
+                ports_list, {self.tool_name: self.welcome_message})
             try:
-                com_port_number = matched_ports_dicts[tool_name]
+                com_port_number = matched_ports_dicts[self.tool_name]
             except:
                 logging.error("Tool initialization: No serial port name provided.")
                 return
         
-        self.getDockingPointByToolName(tool_name=tool_name):
-        
-        super().__init__(com_port_number, welcome_message=welcome_message)
+        super().__init__(com_port_number, welcome_message=self.welcome_message)
         
         
     @classmethod
@@ -108,7 +113,11 @@ class tool(llc.serial_device):
         cls.z_dock = z
         cls.z_safe = z_init
         
-        return cls(robot=robot, com_port_number=new_port, welcome_message=welcome_message)
+        cls.speed_xy = speed_xy
+        cls.speed_z = speed_z
+        cls.welcome_message = welcome_message
+        
+        return cls(robot=robot, com_port_number=new_port)
         
     @classmethod
     def getToolFromSerialDev(cls, robot, device, welcome_message=""):
