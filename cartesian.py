@@ -52,6 +52,33 @@ def axis_index(axis):
         return result
 
 
+def axisToCoordinates(axis, value, nonetype=False):
+    """
+    Accepts "axis" input as "x", "y", "z" and numerical value.
+    Returns tuple (x, y, z), where two of the values are 0, other is "value"
+    For example:
+        AxisToCoordinates('y', 5)
+    returns
+        (0, 5, 0)
+    """
+    axis = axis.lower()
+    if nonetype:
+        t = [None, None, None]
+    else:
+        t = [0, 0, 0]
+        
+    if axis=='x':
+        t[0] = value
+    elif axis=='y':
+        t[1] = value
+    elif axis=='z':
+        t[2] = value
+    else:
+        print("Wrong axis provided: ", axis)
+        print("Provide axis x, y or z")
+    return t
+
+
 class arnie(llc.serial_device):
     """
     Class handling cartesian robot's basic operations and data

@@ -181,6 +181,7 @@ class tool(llc.serial_device):
         self.robot.move(z=z_init)
 
 
+
 class pipettor(tool):
     # TODO: Factor this function out into serial_device.
     def write_wait(self, expression, confirm_message="Idle", eol=None):
@@ -255,6 +256,12 @@ class mobile_touch_probe(tool):
         cls.welcome_message="mobile touch probe"
         return super().getTool(robot, 
             tool_name=cls.tool_name, welcome_message=cls.welcome_message)
+            
+"""            
+    def approachUntilTouch(self, axis, step):
+        while not self.isTouched():
+"""            
+        
 
     
 class mobile_gripper(tool):
