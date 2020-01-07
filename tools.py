@@ -36,12 +36,23 @@ class tool(llc.serial_device):
     Parent class, handling tools
     """
     
-    def __init__(self, robot, pick_up=True, device_name='', device=None, com_port_number=None, 
-                 welcome_message="", z_init=0):
+    def __init__(self, robot, com_port_number=None, 
+                 welcome_message=""):
         """
         Handles any general tool properties; that any tool will have.
         This class will rarely be used by itself, instead, it is
         provided as parent one for specialized tools.
+        
+        Inputs:
+            robot
+                Instance of Arnie cartesian robot. Needed because the tool will dictate movements.
+            com_port_number
+                Name of the com port. Example: COM4
+            welcome_message
+                At initialization, tool will send some welcome message.
+                It must contain this unique string, so the tool is identified.
+            z_init
+                Safe height at which robot won't hit anything. Default is 0.
         """
         
         # Tool will get control of the robot to tell it where to move itself,
@@ -75,7 +86,87 @@ class tool(llc.serial_device):
         # Obtaining newly appeared port
         new_port = list(set(updated_ports_list) - set(initial_ports_list))[0]
         
+        cls.x_dock = x
+        cls.y_dock = y
+        cls.z_dock = z
+        cls.z_safe = z_init
+        
         return cls(robot=robot, com_port_number=new_port, welcome_message=welcome_message)
+        
+    @classmethod
+    def getToolFromSerialDev(cls, robot, device, welcome_message=""):
+        """
+        Initializa tool instance from already existing serial_device instance
+        """
+        
+        port_name = device.port_name
+        device.close()
+        
+        # Defining variables for compatibility
+        cls.x_dock = None
+        cls.y_dock = None
+        cls.z_dock = None
+        cls.z_safe = None
+        
+        return cls(robot=robot, com_port_number=port_name, welcome_message=welcome_message)
+        
+    @classmethod
+    def getTool(cls, robot, tool_name="", welcome_message=""):
+        """
+        Get tool using its name
+        """
+        [x, y, z] = param.getToolDockingPoint(tool_name)
+        cls.tool_name = tool_name
+        return cls.getToolAtCoord(robot=robot, x=x, y=y, z=z, welcome_message=welcome_message)
+    
+    
+    def setDockingPoint(x, y, z, z_safe):
+        self.x_dock = x
+        self.y_dock = y
+        self.z_dock = z
+        self.z_safe = z_safe
+    
+    
+    def getDockingPointByToolName(self, tool_name=None):
+        if tool_name is None:
+            tool_name = self.tool_name
+        [self.x_dock, self.y_dock, self.z_dock] = param.getToolDockingPoint(tool_name)
+        return [self.x_dock, self.y_dock, self.z_dock]
+    
+    
+    def returnTool(self):
+        """
+        Returns tool to its place.
+        
+        Assumes that coordinates were already specified in one or another way
+        """
+        
+        if self.x_dock is None or self.y_dock is None or self.z_dock is None:
+            # Attempting to load docking points using tool name
+            self.getDockingPointByToolName()
+        if self.z_safe is None:
+            # Just setting safe height to be at the top of the robot
+            self.z_safe = 0
+        
+        self.returnToolToCoord(self.x_dock, self.y_dock, self.z_dock, self.z_safe)
+    
+    
+    def returnToolToCoord(self, x, y, z, z_init, speed_xy=None, speed_z=None):
+        """
+        Returns tool positioned at known absolute coordinates x, y, z.
+        Operation will perform regardless of what state the tool is, 
+        where there is a connection with it or whether it is initilized.
+        User is responsible for prepping the tool for return, if applicable.
+        """
+        
+        # Moving robot to the safe height, where it will not accidentally touch anything.
+        self.robot.move(z=z_init)
+        # Moving to the tool release position
+        self.robot.move(x=x, y=y, z=z, z_first=False, speed_xy=speed_xy, speed_z=SPEED_Z_MOVING_DOWN)
+        # Opening tool
+        self.robot.openTool()
+        # Moving back to the safe position
+        self.robot.move(z=z_init)
 
 
 class pipettor(tool):
@@ -141,13 +232,20 @@ class mobile_touch_probe(tool):
         response = self.readAll()
         print("Mobile touch probe response: " + response)
         return bool(int(re.split(pattern='/r/n', string=response)[0]))
-        
-    def pickUpTouchProbe(self):
+    
+    
+    @classmethod
+    def getTool(cls, robot):
         """
-        Locates and picks up a touch probe
+        Get touch probe from its saved position and initializes the object
         """
-        [x, y, z] = param.getToolDockingPoint('mobile_probe')
-        
+        cls.tool_name = "mobile_probe"
+        cls.welcome_message="mobile touch probe"
+        return super().getTool(robot, 
+            tool_name=cls.tool_name, welcome_message=cls.welcome_message)
+
+
+
 
     
 class mobile_gripper(tool):
