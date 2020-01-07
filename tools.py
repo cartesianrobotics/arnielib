@@ -4,6 +4,7 @@ Module handling tools for the robot, both mobile and floor-based
 
 import logging
 from copy import deepcopy
+import re
 
 # Internal arnielib modules
 import low_level_comm as llc
@@ -58,6 +59,8 @@ class tool(llc.serial_device):
         # Tool will get control of the robot to tell it where to move itself,
         # or what operation may be needed.
         self.robot = robot
+        self.tool_name = tool_name
+        self.welcome_message = welcome_message
         
         # Trying to find proper port from the list of existing ports,
         # Using device name and welcome message
@@ -69,6 +72,8 @@ class tool(llc.serial_device):
             except:
                 logging.error("Tool initialization: No serial port name provided.")
                 return
+        
+        self.getDockingPointByToolName(tool_name=tool_name):
         
         super().__init__(com_port_number, welcome_message=welcome_message)
         
@@ -257,10 +262,29 @@ class mobile_touch_probe(tool):
         return super().getTool(robot, 
             tool_name=cls.tool_name, welcome_message=cls.welcome_message)
             
-"""            
-    def approachUntilTouch(self, axis, step):
+            
+    def approachUntilTouch(self, axis, step, speed_xy=None, speed_z=None):
+        """
+        Arnie will move along specified "axis" by "step"
+            Inputs
+                axis - string, "x", "y" or "z"
+                step - distance to move at every step
+                speed_xy, speed_z - axis moving speed. Using robot defaults at cartesian.py
+        """
+        
+        # Getting speed defaults from the robot instance.
+        if speed_xy is None:
+            speed_xy = self.robot.speed_x
+        if speed_z is None:
+            speed_z = self.robot.speed_z
+        
+        dC = self.robot.axisToCoordinates(axis, step)
+        
         while not self.isTouched():
-"""            
+            self.robot.move_delta(dx=dC[0], dy=dC[1], dz=dC[2], speed_xy=speed_xy, speed_z=speed_z)
+            position = self.robot.getPosition()
+        x, y, z = self.robot.getPosition()
+        return x, y, z
         
 
     

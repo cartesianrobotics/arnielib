@@ -52,31 +52,7 @@ def axis_index(axis):
         return result
 
 
-def axisToCoordinates(axis, value, nonetype=False):
-    """
-    Accepts "axis" input as "x", "y", "z" and numerical value.
-    Returns tuple (x, y, z), where two of the values are 0, other is "value"
-    For example:
-        AxisToCoordinates('y', 5)
-    returns
-        (0, 5, 0)
-    """
-    axis = axis.lower()
-    if nonetype:
-        t = [None, None, None]
-    else:
-        t = [0, 0, 0]
-        
-    if axis=='x':
-        t[0] = value
-    elif axis=='y':
-        t[1] = value
-    elif axis=='z':
-        t[2] = value
-    else:
-        print("Wrong axis provided: ", axis)
-        print("Provide axis x, y or z")
-    return t
+
 
 
 class arnie(llc.serial_device):
@@ -88,6 +64,13 @@ class arnie(llc.serial_device):
                  speed_x=SPEED_X, speed_y=SPEED_Y, speed_z=SPEED_Z,
                  welcome_message=WELCOME_MESSAGE):
         logging.info("Cartesian robot Arnie: start initialization.")
+        
+        # This is so the tools can later access default speeds for the robot.
+        self.speed_x = speed_x
+        self.speed_y = speed_y
+        self.speed_z = speed_z
+        self.welcome_message = welcome_message
+        
         super().__init__(com_port_number, welcome_message=welcome_message)
         self.firstActions(speed_x=speed_x, speed_y=speed_y, speed_z=speed_z, home=False)
         logging.info("Cartesian robot Arnie initializsed successfully.")
@@ -296,10 +279,10 @@ class arnie(llc.serial_device):
         logging.info("Arnie openTool: Opening tool docker to accept a new tool.")
         logging.info("Arnie openTool: G-code sent: %s, delay %s seconds.", open_tool_G_code, sleep_time)
         
-        time.sleep(0.5) # Checking whether firmware needs some time before accepting the next commnand
+        #time.sleep(0.5) # Checking whether firmware needs some time before accepting the next commnand
+        self.writeAndWait("M400")
         self.writeAndWait(open_tool_G_code)
-        self.writeAndWait(open_tool_G_code)
-        self.move_delta(0,0,0) # Added to make firmware do some actions
+        #self.writeAndWait("G4 P2000")
         time.sleep(sleep_time)
         
     def closeTool(self):
@@ -311,10 +294,12 @@ class arnie(llc.serial_device):
         logging.info("Arnie closeTool: G-code sent: %s, delay %s seconds.", close_tool_G_code, sleep_time)
         self.getPosition() # This is done so the actual position is recorded in the log file.
         
-        time.sleep(0.5) # Checking whether firmware needs some time before accepting the next commnand
+        #time.sleep(0.5) # Checking whether firmware needs some time before accepting the next commnand
+        self.writeAndWait("M400")
         self.writeAndWait(close_tool_G_code)
-        self.writeAndWait(close_tool_G_code)
-        self.move_delta(0,0,0) # Added to make firmware do some actions
+        #self.writeAndWait("G4 P2000")
+        #self.writeAndWait(close_tool_G_code)
+        #self.move_delta(0,0,0) # Added to make firmware do some actions
         time.sleep(sleep_time)
     
     def getPosition(self):
@@ -482,6 +467,34 @@ class arnie(llc.serial_device):
             logging.error("Cartesian returnTool(): Unable to find coordinates where to place the tool.")
             logging.error("Cartesian returnTool(): Use returnToolToCoord() instead. ")
         
+
+    def axisToCoordinates(self, axis, value, nonetype=False):
+        """
+        Accepts "axis" input as "x", "y", "z" and numerical value.
+        Returns tuple (x, y, z), where two of the values are 0, other is "value"
+        For example:
+            AxisToCoordinates('y', 5)
+        returns
+            (0, 5, 0)
+        """
+        axis = axis.lower()
+        if nonetype:
+            t = [None, None, None]
+        else:
+            t = [0, 0, 0]
+            
+        if axis=='x':
+            t[0] = value
+        elif axis=='y':
+            t[1] = value
+        elif axis=='z':
+            t[2] = value
+        else:
+            print("Wrong axis provided: ", axis)
+            print("Provide axis x, y or z")
+        return t
+
+
 
     # TODO: This function is never used. Clean it? 
     def softInitToolAttempt(self, tool, total_attempts=4, wait_time=2, current_attempt=0):
