@@ -24,8 +24,8 @@ WELCOME_MESSAGE = "Marlin"
 # Axis moving speed
 SPEED_X = 8000
 SPEED_Y = 8000
-SPEED_Z = 5000
-SPEED_Z_MOVING_DOWN = 15000 # Robot can move down much faster than up.
+SPEED_Z = 4000
+SPEED_Z_MOVING_DOWN = 10000 # Robot can move down much faster than up.
 
 # Homing command
 # Example: G28 - homes all axis (careful, better first home Z axis, then others)

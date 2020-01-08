@@ -82,7 +82,7 @@ class serial_device():
         
         # Reading welcome message from the device connected
         logging.info("Port %s: Welcome message received:", self.port_name)
-        self.welcome_message = self.readAll(delay=welcome_message_delay)
+        self.actual_welcome_message = self.readAll(delay=welcome_message_delay)
         # Cleaning input buffer from some extra messages
         self.port.flushInput()
 
@@ -150,12 +150,12 @@ class serial_device():
         Returns True if match found.
         """
         matched = False
-        if re.search(pattern=expected_welcome_message, string=self.welcome_message):
+        if re.search(pattern=expected_welcome_message, string=self.actual_welcome_message):
             matched = True
             logging.info("Port %s: Successfully matched pattern", self.port_name)
             logging.info(expected_welcome_message)
             logging.info("To the welcome message: ")
-            logging.info(self.welcome_message)
+            logging.info(self.actual_welcome_message)
         
         return matched
     
@@ -301,10 +301,18 @@ def matchPortsWithDevices(ports_list, device_matchline_dict):
     for port in ports_list:
         s = serial_device(port)
         # Finds index of a proper pattern, then calls that pattern out of pattern_list
-        try:    # This is because some times patterns_list returns None (device returned something that was not in the patterns_list)
+        # When serial_device is something that is not in patterns_list, 
+        # s.findDeviceInList will return None. Current device is ignored, and 
+        # function continues to the next device.
+        try:    
             correct_pattern = patterns_list[s.findDeviceInList(patterns_list)]
         except:
-            pass
+            logging.error("matchPortsWithDevices(): could not execute finiding device in list.")
+            logging.error("matchPortsWithDevices(): Provided patterns_list: %s", patterns_list)
+            logging.error(s.findDeviceInList(patterns_list))
+            # Assigning blank value, so later correct_pattern won't pass check on expected value.
+            correct_pattern = ""
+            #return
         for key, value in device_matchline_dict.items():
             if correct_pattern == value:
                 device_port_dict[key] = port
