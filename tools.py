@@ -267,10 +267,15 @@ class pipettor(tool):
 
 
 class mobile_touch_probe(tool):
+
+    def __init__(self, robot):
+        super().__init__(robot, com_port_number=None, tool_name="mobile_probe",
+                 welcome_message="mobile touch probe")
+
     def isTouched(self):
         self.write('d')
         response = self.readAll()
-        print("Mobile touch probe response: " + response)
+        logging.info("Mobile touch probe response: %s", response)
         return bool(int(re.split(pattern='/r/n', string=response)[0]))
     
     def isNotTouched(self):
@@ -338,26 +343,35 @@ class mobile_touch_probe(tool):
     def findWall(self, axis, direction, step_dict=None, step_back_length=3):
         """
         Find coordinate of the wall on given "axis".
-        Robot assumed to be connected to mobile touch probe, or a "stalaktite".
-        Will move on "axis" into "direction", until stalaktite detects collision. Then it 
-        retracts until stalaktite stops detecting collision. Then it approaches again with finer steps,
-        until collision detected. Then retracts and approaches again with extra fine steps. 
+        Will move on "axis" into "direction", until touch probe detects collision. Then it 
+        retracts until probe stops detecting collision. Then it approaches again with finer steps,
+        until collision detected. This cycle repeats several times according to step_dict
         
         After that, it retracts on "step_back_length".
         
         Parameters:
-            - robot - robot instance
-            - axis - axis at which to perform calibration; only allowed "X", "Y" or "Z".
-            - direction - direction at which to move robot; eiter +1 or -1. +1 moves further from homing point; -1 - towards homing point
-            - name - only used for logging; not influences operation. Default is "unknown".
-            - touch_function - unclear
-            - step_decrease_list - list of 5 elements; each element is how far to move each step until checking the touch probe state.
-                default is [8.1, 2.7, 0.9, 0.3, 0.1]
-            - speed_xy_list - list of 5 elements, which are the speed at which to do movement in XY direction.
-                default is [1000, 500, 300, 100, 50]
-            - speed_z_list - list of 5 elements, which are the speed at which to do movement in Z direction.
-                default is [5000, 4000, 3000, 2000, 1000]
-            - step_back_length - distance to retract after finishing calibration; default is 5.
+            axis
+                axis at which to perform calibration; only allowed "X", "Y" or "Z".
+            direction
+                direction at which to move robot; 
+                eiter +1 or -1. +1 moves further from homing point; -1 - towards homing point
+            step_dict
+                Dictionary containing instructions on how to perform approach and retraction
+                (step sizes, speeds). 
+                Dictionary contains keys, all numbered as 0, 1, 2, ...
+                Each key points to a dictionary of the form:
+                {'step_fwd': 12, 'speed_xy_fwd': 5000, 'speed_z_fwd':5000,
+                    'step_back': 12, 'speed_xy_back': 5000, 'speed_z_back':5000}
+                Overall dictionary looks like this:
+                step_dict = {
+                    0: {'step_fwd': 12, 'speed_xy_fwd': 5000, 'speed_z_fwd':5000,
+                        'step_back': 12, 'speed_xy_back': 5000, 'speed_z_back':5000},
+                    1: {'step_fwd': 3, 'speed_xy_fwd': 2000, 'speed_z_fwd':3000,
+                        'step_back': 6, 'speed_xy_back': 5000, 'speed_z_back':2000},
+                    ...
+                }
+            step_back_length
+                distance to retract after finishing calibration; default is 5.
         
         Returns coordinate at which collision was detected during finest approach.
         """
@@ -417,6 +431,58 @@ class mobile_touch_probe(tool):
         
         return coord
         
+    
+    def findCenterInner(self, axis, step_dict=None, step_back_length=3, opposite_side_dist=0, direction=1):
+        axis = axis.lower()
+        # Finding first wall
+        front_wall = self.findWall(axis=axis, direction=direction, step_dict=step_dict)
+        # Moving to the other wall
+        if axis == 'x':
+            self.robot.move_delta(dx=-direction*opposite_side_dist)
+        elif axis == 'y':
+            self.robot.move_delta(dy=-direction*opposite_side_dist)
+        else:
+            pass
+        # Finding second wall
+        rear_wall = self.findWall(axis=axis, direction=-direction, step_dict=step_dict)
+        # Calculating center
+        center = (front_wall + rear_wall) / 2.0
+        return center
+    
+    
+    def findCenterOuter(self, axis, raise_height, dist_through_obstruct,
+                        step_dict=None, step_back_length=3, opposite_side_dist=0, direction=1):
+        """
+        Performs "Pi-type" calibtation: from one side of the wall, then go through the wall,
+        then from the other side of the wall.
+        
+        Inputs:
+            axis
+                x or y; axis at which to perform calibration
+            raise_height
+                height at which to raise gantry, so the probe can go through the obstruction
+            dist_through_obstruct
+                distance to travel to get through the obstruction
+            ...
+        """
+        # Find first wall
+        front_wall = self.findWall(axis=axis, direction=direction, step_dict=step_dict)
+        # Raise gantry
+        self.robot.move_delta(dz=-raise_height)
+        # Move through obstruction
+        if axis == 'x':
+            self.robot.move_delta(dx=direction*dist_through_obstruct)
+        elif axis == 'y':
+            self.robot.move_delta(dy=direction*dist_through_obstruct)
+        else:
+            pass
+        # Lower gantry back
+        self.robot.move_delta(dz=raise_height)
+        # Find opposite side of the wall
+        rear_wall = self.findWall(axis=axis, direction=-direction, step_dict=step_dict)
+        # Calculateing center
+        center = (front_wall + rear_wall) / 2.0
+        return center
     
     
 class mobile_gripper(tool):
