@@ -24,8 +24,8 @@ WELCOME_MESSAGE = "Marlin"
 # Axis moving speed
 SPEED_X = 8000
 SPEED_Y = 8000
-SPEED_Z = 4000
-SPEED_Z_MOVING_DOWN = 10000 # Robot can move down much faster than up.
+SPEED_Z = 3000
+SPEED_Z_MOVING_DOWN = 8000 # Robot can move down much faster than up.
 
 # Homing command
 # Example: G28 - homes all axis (careful, better first home Z axis, then others)
@@ -282,7 +282,8 @@ class arnie(llc.serial_device):
         #time.sleep(0.5) # Checking whether firmware needs some time before accepting the next commnand
         self.writeAndWait("M400")
         self.writeAndWait(open_tool_G_code)
-        #self.writeAndWait("G4 P2000")
+        self.writeAndWait("G4 P500")
+        self.writeAndWait("M400")
         time.sleep(sleep_time)
         
     def closeTool(self):
@@ -297,7 +298,8 @@ class arnie(llc.serial_device):
         #time.sleep(0.5) # Checking whether firmware needs some time before accepting the next commnand
         self.writeAndWait("M400")
         self.writeAndWait(close_tool_G_code)
-        #self.writeAndWait("G4 P2000")
+        self.writeAndWait("G4 P500")
+        self.writeAndWait("M400")
         #self.writeAndWait(close_tool_G_code)
         #self.move_delta(0,0,0) # Added to make firmware do some actions
         time.sleep(sleep_time)
@@ -344,7 +346,7 @@ class arnie(llc.serial_device):
         x, y, z = tool_at_slot.getCenterCoordinates()
         self.approachToolPosition(x=x, y=y, z=z, speed_xy=speed_xy, speed_z=speed_z)
     
-    # TODO: Try to move it to the "tool" class
+
     def getToolAtCoord(self, x, y, z, z_init=0, speed_xy=None, speed_z=None):
         """
         Get tool positioned at known absolute coordinates x, y, z.
