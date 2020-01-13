@@ -52,8 +52,23 @@ def axis_index(axis):
         return result
 
 
-
-
+class gripper(llc.serial_device):
+    """
+    Class handles general grippers; including a docker.
+    """
+    
+    def __init__(self, com_port_number, welcome_message="Arnie's universal dock controller"):
+        super().__init__(com_port_number, welcome_message=welcome_message)
+        logging.info("Gripper successfully initialized.")
+        
+    
+    def setServoPosition(self, value):
+        """
+        Commands the servo to get to a new position.
+        Acceptable values are 1-180.
+        """
+        self.write(str(value))
+        
 
 class arnie(llc.serial_device):
     """
