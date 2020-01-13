@@ -20,6 +20,7 @@ import param    # Handles calibration data
 
 # Arnie's welcome message
 WELCOME_MESSAGE = "Marlin"
+DOCKER_WELCOME = "Arnie's universal dock controller"
 
 # Axis moving speed
 SPEED_X = 8000
@@ -57,7 +58,7 @@ class gripper(llc.serial_device):
     Class handles general grippers; including a docker.
     """
     
-    def __init__(self, com_port_number, welcome_message="Arnie's universal dock controller"):
+    def __init__(self, com_port_number, welcome_message=DOCKER_WELCOME):
         super().__init__(com_port_number, welcome_message=welcome_message)
         logging.info("Gripper successfully initialized.")
         
@@ -75,9 +76,15 @@ class arnie(llc.serial_device):
     Class handling cartesian robot's basic operations and data
     """
 
-    def __init__(self, com_port_number, 
+    def __init__(self, cartesian_port, docker_port,  
                  speed_x=SPEED_X, speed_y=SPEED_Y, speed_z=SPEED_Z,
                  welcome_message=WELCOME_MESSAGE):
+        """
+        Initializes Arnie.
+        At this point there is no automatic port determination.
+        Use low_level_comm.listSerialPorts() and low_level_comm.matchPortsWithDevices()
+        before initialization.
+        """
         logging.info("Cartesian robot Arnie: start initialization.")
         
         # This is so the tools can later access default speeds for the robot.
@@ -86,7 +93,11 @@ class arnie(llc.serial_device):
         self.speed_z = speed_z
         self.welcome_message = welcome_message
         
-        super().__init__(com_port_number, welcome_message=welcome_message)
+        # Initializng docker
+        self.docker = gripper(docker_port)
+        
+        # Initializing cartesian
+        super().__init__(cartesian_port, welcome_message=welcome_message)
         self.firstActions(speed_x=speed_x, speed_y=speed_y, speed_z=speed_z, home=False)
         logging.info("Cartesian robot Arnie initializsed successfully.")
 
@@ -288,36 +299,46 @@ class arnie(llc.serial_device):
     
     def openTool(self):
         """Docker opens to accept a tool"""
-        open_tool_G_code = OPEN_TOOL_G_CODE
-        sleep_time = OPEN_TOOL_DELAY
+        
+        #open_tool_G_code = OPEN_TOOL_G_CODE
+        #sleep_time = OPEN_TOOL_DELAY
+        #
+        #logging.info("Arnie openTool: Opening tool docker to accept a new tool.")
+        #logging.info("Arnie openTool: G-code sent: %s, delay %s seconds.", open_tool_G_code, sleep_time)
+        #
+        ##time.sleep(0.5) # Checking whether firmware needs some time before accepting the next commnand
+        #self.writeAndWait("M400")
+        #self.writeAndWait(open_tool_G_code)
+        #self.writeAndWait("G4 P500")
+        #self.writeAndWait("M400")
+        #time.sleep(sleep_time)
         
         logging.info("Arnie openTool: Opening tool docker to accept a new tool.")
-        logging.info("Arnie openTool: G-code sent: %s, delay %s seconds.", open_tool_G_code, sleep_time)
+        self.docker.setServoPosition(10)
+        time.sleep(1)
         
-        #time.sleep(0.5) # Checking whether firmware needs some time before accepting the next commnand
-        self.writeAndWait("M400")
-        self.writeAndWait(open_tool_G_code)
-        self.writeAndWait("G4 P500")
-        self.writeAndWait("M400")
-        time.sleep(sleep_time)
         
     def closeTool(self):
         """Docker closes, fixing a tool in place"""
-        close_tool_G_code = CLOSE_TOOL_G_CODE
-        sleep_time = CLOSE_TOOL_DELAY
+        #close_tool_G_code = CLOSE_TOOL_G_CODE
+        #sleep_time = CLOSE_TOOL_DELAY
+        #
+        #logging.info("Arnie closeTool: Closing tool docker, possibly with a new tool.")
+        #logging.info("Arnie closeTool: G-code sent: %s, delay %s seconds.", close_tool_G_code, sleep_time)
+        #self.getPosition() # This is done so the actual position is recorded in the log file.
+        #
+        ##time.sleep(0.5) # Checking whether firmware needs some time before accepting the next commnand
+        #self.writeAndWait("M400")
+        #self.writeAndWait(close_tool_G_code)
+        #self.writeAndWait("G4 P500")
+        #self.writeAndWait("M400")
+        ##self.writeAndWait(close_tool_G_code)
+        ##self.move_delta(0,0,0) # Added to make firmware do some actions
+        #time.sleep(sleep_time)
         
         logging.info("Arnie closeTool: Closing tool docker, possibly with a new tool.")
-        logging.info("Arnie closeTool: G-code sent: %s, delay %s seconds.", close_tool_G_code, sleep_time)
-        self.getPosition() # This is done so the actual position is recorded in the log file.
-        
-        #time.sleep(0.5) # Checking whether firmware needs some time before accepting the next commnand
-        self.writeAndWait("M400")
-        self.writeAndWait(close_tool_G_code)
-        self.writeAndWait("G4 P500")
-        self.writeAndWait("M400")
-        #self.writeAndWait(close_tool_G_code)
-        #self.move_delta(0,0,0) # Added to make firmware do some actions
-        time.sleep(sleep_time)
+        self.docker.setServoPosition(90)
+        time.sleep(1)
     
     def getPosition(self):
         """
@@ -555,3 +576,8 @@ class arnie(llc.serial_device):
             print("Repeated tool pickup failed after "+str(current_attempt)+" attempts")
             attempt_successful = 0
         return attempt_successful
+        
+        
+    def close(self):
+        self.docker.close()
+        super().close()

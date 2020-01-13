@@ -99,7 +99,7 @@ class serial_device():
         else:
             com_port = self.port_name
         # Make sure port is closed
-        self.close()
+        #self.close()
         # Opening robot instance
         self.port = serial.Serial(com_port, baudrate, timeout=timeout)
         logging.info("Port %s: Opened.", self.port_name)
