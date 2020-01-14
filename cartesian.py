@@ -25,7 +25,7 @@ DOCKER_WELCOME = "Arnie's universal dock controller"
 # Axis moving speed
 SPEED_X = 8000
 SPEED_Y = 8000
-SPEED_Z = 3000
+SPEED_Z = 5000
 SPEED_Z_MOVING_DOWN = 8000 # Robot can move down much faster than up.
 
 # Homing command
