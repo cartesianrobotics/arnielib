@@ -95,6 +95,17 @@ class arnie(llc.serial_device):
         
         # Initializng docker
         self.docker = gripper(docker_port)
+        # Forsing to move servo to "closed" position at initialization
+        # This is to prevent servo from twitching at startup.
+        # When the port is initialized, the electronics somehow send some 
+        # trash signal to servo, and it thinks it has to move to 0, which is outside of 
+        # physical operation range.
+        # This causes servo to stall, overheat and eventually burn.
+        # Without this, stall will continue until docker command is supplied, which can be 
+        # for a while.
+        # This workaround will send servo to the save close position, even if it was previously sent
+        # to 0. If the tool was already attached, nothing should happen.
+        self.closeTool()
         
         # Initializing cartesian
         super().__init__(cartesian_port, welcome_message=welcome_message)

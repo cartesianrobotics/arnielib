@@ -158,7 +158,7 @@ def calibrateMobileToolHolderOuter(probe, tool_name,
         'type': tool_name,
         'tip': [-1, -1, -1],
     }
-    param.saveTool(tool_data, toolname=tool_name, slot=(n_x, n_y))
+    param.saveTool(tool_data, slot=(n_x, n_y))
     
     return tool_data
     

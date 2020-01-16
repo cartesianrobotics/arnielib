@@ -183,7 +183,9 @@ def saveTool(new_tool_data, toolname=None, slot=None, data=None, tool_file=DEFAU
     else:
         return
     
-    tool_data = new_tool_data
+    tool_index = data.index(tool_data)
+    data[tool_index] = new_tool_data
+    
     replaceFile(tool_file, data)
     
 # Functions to handle tool endpoints
