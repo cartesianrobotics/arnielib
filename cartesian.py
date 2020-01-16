@@ -337,7 +337,7 @@ class arnie(llc.serial_device):
         #time.sleep(sleep_time)
         
         logging.info("Arnie closeTool: Closing tool docker, possibly with a new tool.")
-        self.docker.setServoPosition(90)
+        self.docker.setServoPosition(80)
         time.sleep(1)
     
     def getPosition(self):

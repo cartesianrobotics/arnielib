@@ -37,7 +37,7 @@ class tool(llc.serial_device):
     Parent class, handling tools
     """
     
-    def __init__(self, com_port_number=None, tool_name=None,
+    def __init__(self, robot, com_port_number=None, tool_name=None,
                  welcome_message=None):
         """
         Handles any general tool properties; that any tool will have.
@@ -56,6 +56,10 @@ class tool(llc.serial_device):
                 Safe height at which robot won't hit anything. Default is 0.
         """
         
+        # Tool will get control of the robot to tell it where to move itself,
+        # or what operation may be needed.
+        self.robot = robot
+        
         if tool_name is not None:
             self.tool_name = tool_name
 
@@ -73,7 +77,9 @@ class tool(llc.serial_device):
             except:
                 logging.error("Tool initialization: No serial port name provided.")
                 return
-
+        
+        self.loadToolInfo()
+        
         super().__init__(com_port_number, welcome_message=self.welcome_message)
         
 
@@ -94,6 +100,22 @@ class tool(llc.serial_device):
         
         return cls(com_port_number=port_name, welcome_message=welcome_message)
         
+    
+    def loadToolInfo(self, data=None):
+        try:
+            self.tool_data = param.getToolByName(name=self.tool_name, data=data)
+        except:
+            self.tool_data = {
+                'position': [self.x_dock, self.y_dock, self.z_dock],
+                'type': self.tool_name,
+            }
+        return self.tool_data
+        
+    
+    def saveToolInfo(self, data=None):
+        if data is None:
+            data = self.tool_data
+        param.saveTool(new_tool_data=data, tool_name=self.tool_name)
 
     
 class mobile_tool(tool):
@@ -119,9 +141,6 @@ class mobile_tool(tool):
                 Safe height at which robot won't hit anything. Default is 0.
         """
         
-        # Tool will get control of the robot to tell it where to move itself,
-        # or what operation may be needed.
-        self.robot = robot
         try:
             self.getDockingPointByToolName(tool_name=tool_name)
         except:
@@ -137,7 +156,7 @@ class mobile_tool(tool):
             # If necessary, it can be chagned later.
             self.z_safe = 0
         
-        super().__init__(com_port_number=com_port_number, tool_name=tool_name,
+        super().__init__(robot=robot, com_port_number=com_port_number, tool_name=tool_name,
                  welcome_message=welcome_message)
 
     @classmethod
@@ -307,26 +326,6 @@ class touch_probe():
         return not self.isTouched()    
     
 
-class mobile_touch_probe(mobile_tool, touch_probe):
-
-    #def __init__(self, robot, com_port_number=None, 
-    #             tool_name='mobile_probe', welcome_message='mobile touch probe'):
-    #    super().__init__(robot, com_port_number=com_port_number, 
-    #             tool_name="mobile_probe",
-    #             welcome_message="mobile touch probe")
-
-
-    @classmethod
-    def getTool(cls, robot):
-        """
-        Get touch probe from its saved position and initializes the object
-        """
-        cls.tool_name = "mobile_probe"
-        cls.welcome_message="mobile touch probe"
-        return super().getTool(robot, 
-            tool_name=cls.tool_name, welcome_message=cls.welcome_message)
-            
-            
     def approachUntilTouch(self, axis, step, retract=False, speed_xy=None, speed_z=None):
         """
         Arnie will move along specified "axis" by "step"
@@ -517,19 +516,46 @@ class mobile_touch_probe(mobile_tool, touch_probe):
         # Calculateing center
         center = (front_wall + rear_wall) / 2.0
         return center
+
+
+
+class mobile_touch_probe(mobile_tool, touch_probe):
+
+    def __init__(self, robot, com_port_number=None, 
+                 tool_name='mobile_probe', welcome_message='mobile touch probe'):
+        super().__init__(robot, com_port_number=com_port_number, 
+                 tool_name=tool_name,
+                 welcome_message=welcome_message)
+
+
+    @classmethod
+    def getTool(cls, robot):
+        """
+        Get touch probe from its saved position and initializes the object
+        """
+        cls.tool_name = "mobile_probe"
+        cls.welcome_message="mobile touch probe"
+        return super().getTool(robot, 
+            tool_name=cls.tool_name, welcome_message=cls.welcome_message)
+            
+            
+class stationary_touch_probe(tool, touch_probe):
+    """
+    Handles stationary touch probes
+    """
+    def __init__(self, robot, com_port_number=None, 
+                 tool_name='stationary_probe', welcome_message='stationary touch probe'):
+        super().__init__(robot=robot, com_port_number=com_port_number, 
+                 tool_name=tool_name,
+                 welcome_message=welcome_message)
+
+
     
     
 class mobile_gripper(mobile_tool):
     def operate_gripper(self, level):
         self.write(str(level))
 
-    
-class stationary_touch_probe(tool, touch_probe):
-
-    def __init__(self, com_port_number=None, tool_name="stationary_probe",
-                 welcome_message="stationary touch probe"):
-        super().__init__(com_port_number=com_port_number, tool_name=tool_name,
-            welcome_message=welcome_message)
 
 
 

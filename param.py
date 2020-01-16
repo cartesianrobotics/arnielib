@@ -116,8 +116,15 @@ def getSlotZ(n_x, n_y,
                                   slots_data=slots_data, floor_calibr_file=floor_calibr_file)
     return slot['floor_z']
 
+
+# Functions handling communications with tools
+# ------------------------------------------------------------------------------------------------
     
-def getToolByName(name, data):
+def getToolByName(name, data=None, tool_file=DEFAULT_TOOL_CALIBR_FILE):
+
+    # If custom data are not provided, use those from standard file
+    if data is None:
+        data = loadData(tool_file)
     
     for tool in data:
         try:
@@ -153,9 +160,71 @@ def getToolDockingPoint(toolname=None, slot=None, data=None, tool_file=DEFAULT_T
     if toolname is not None:
         tool_data = getToolByName(toolname, data)
     elif slot is not None:
-        print ("Triggered")
         tool_data = getToolBySlot(slot[0], slot[1], data)
     else:
         return
     
     return tool_data['position']
+    
+
+def saveTool(new_tool_data, toolname=None, slot=None, data=None, tool_file=DEFAULT_TOOL_CALIBR_FILE):
+    """
+    Saves all info about a tool
+    """
+    
+    # If custom data are not provided, use those from standard file
+    if data is None:
+        data = loadData(tool_file)
+        
+    if toolname is not None:
+        tool_data = getToolByName(toolname, data)
+    elif slot is not None:
+        tool_data = getToolBySlot(slot[0], slot[1], data)
+    else:
+        return
+    
+    tool_data = new_tool_data
+    replaceFile(tool_file, data)
+    
+# Functions to handle tool endpoints
+# --------------------------------------------------------------------------------------------
+
+def getToolEndPoint(toolname=None, slot=None, data=None, tool_file=DEFAULT_TOOL_CALIBR_FILE):
+    """
+    Obtain coordinates of interactions between tool endpoint and 
+    stationary probe "stalagmite"
+    """
+    
+    # If custom data are not provided, use those from standard file
+    if data is None:
+        data = loadData(tool_file)
+        
+    if toolname is not None:
+        tool_data = getToolByName(toolname, data)
+    elif slot is not None:
+        tool_data = getToolBySlot(slot[0], slot[1], data)
+    else:
+        return
+        
+    return tool_data['tip']
+    
+
+def saveToolEndPoint(x, y, z, 
+                     toolname=None, slot=None, data=None, tool_file=DEFAULT_TOOL_CALIBR_FILE):
+    """
+    Save coordinates at which tool endpoint and stationary probe interact.
+    """
+    
+    # If custom data are not provided, use those from standard file
+    if data is None:
+        data = loadData(tool_file)
+        
+    if toolname is not None:
+        tool_data = getToolByName(toolname, data)
+    elif slot is not None:
+        tool_data = getToolBySlot(slot[0], slot[1], data)
+    else:
+        return
+        
+    tool_data['tip'] = [x, y, z]
+    replaceFile(tool_file, data)
