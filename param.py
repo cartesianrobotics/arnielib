@@ -75,8 +75,10 @@ def loadData(path):
         filehandler = open(path, "r")
     except FileNotFoundError:
         return
-        
-    return json.loads(filehandler.read())
+    
+    result = json.loads(filehandler.read())
+    filehandler.close()
+    return result
 
     
 def calcSquareSlotCenterFromVertices(n_x, n_y, 
@@ -134,8 +136,13 @@ def getToolByName(name, data=None, tool_file=DEFAULT_TOOL_CALIBR_FILE):
         except:
             pass
 
-            
-def getToolBySlot(x, y, data):
+           
+def getToolBySlot(x, y, data=None, tool_file=DEFAULT_TOOL_CALIBR_FILE):
+    
+    # If custom data are not provided, use those from standard file
+    if data is None:
+        data = loadData(tool_file)
+
     for tool in data:
         try:
             saved_x = tool['n_x']
@@ -171,7 +178,7 @@ def saveTool(new_tool_data, toolname=None, slot=None, data=None, tool_file=DEFAU
     """
     Saves all info about a tool
     """
-    
+    logging.debug("Called param.saveTool")
     # If custom data are not provided, use those from standard file
     if data is None:
         data = loadData(tool_file)
@@ -181,10 +188,16 @@ def saveTool(new_tool_data, toolname=None, slot=None, data=None, tool_file=DEFAU
     elif slot is not None:
         tool_data = getToolBySlot(slot[0], slot[1], data)
     else:
-        return
+        tool_data = None
     
-    tool_index = data.index(tool_data)
-    data[tool_index] = new_tool_data
+    if tool_data is not None:
+        logging.debug("saveTool: found data in file: %s", tool_data)
+        tool_index = data.index(tool_data)
+        data[tool_index] = new_tool_data
+    else:
+        logging.debug("saveTool: File does not contain the tool, adding.")
+        data.append(new_tool_data)
+        
     
     replaceFile(tool_file, data)
     

@@ -10,8 +10,9 @@ import re
 import low_level_comm as llc
 import param
 import cartesian as cart    # TODO: Remove it when finishing refactoring.
+import json
 
-SPEED_Z_MOVING_DOWN = 10000 # Robot can move down much faster than up.
+SPEED_Z_MOVING_DOWN = 8000 # Robot can move down much faster than up.
 
 default_slot = {
     "LT": [-1, -1], 
@@ -31,14 +32,15 @@ default_tool = {
     "params": None
 }
 
-
+# TODO: move all variables into tool_data dictionary; 
+# To make it simpler to save/load.
 class tool(llc.serial_device):
     """
     Parent class, handling tools
     """
     
     def __init__(self, robot, com_port_number=None, tool_name=None,
-                 welcome_message=None):
+                 welcome_message=None, tool_data=None):
         """
         Handles any general tool properties; that any tool will have.
         This class will rarely be used by itself, instead, it is
@@ -56,15 +58,29 @@ class tool(llc.serial_device):
                 Safe height at which robot won't hit anything. Default is 0.
         """
         
+        self.tool_data = tool_data
+        
         # Tool will get control of the robot to tell it where to move itself,
         # or what operation may be needed.
         self.robot = robot
+
+        # Attempting to read data from HD
+        if self.tool_data is None:
+            self.tool_data = self.openFileWithToolParameters(tool_name+'.json')
+
+        # Populating dictionary with current rack properties
+        if self.tool_data is None:
+            self.tool_data = {}
         
         if tool_name is not None:
             self.tool_name = tool_name
+            self.tool_data['name'] = tool_name
+            
 
         if welcome_message is not None:
             self.welcome_message = welcome_message
+            self.tool_data['welcome_message'] = welcome_message
+            
         
         # Trying to find proper port from the list of existing ports,
         # Using device name and welcome message
@@ -78,7 +94,7 @@ class tool(llc.serial_device):
                 logging.error("Tool initialization: No serial port name provided.")
                 return
         
-        self.loadToolInfo()
+        #self.loadToolInfo()
         
         super().__init__(com_port_number, welcome_message=self.welcome_message)
         
@@ -99,6 +115,24 @@ class tool(llc.serial_device):
         cls.z_safe = None
         
         return cls(com_port_number=port_name, welcome_message=welcome_message)
+
+
+    def openFileWithToolParameters(self, path):
+        try:
+            filehandler = open(path, 'r')
+            result = json.loads(filehandler.read())
+            filehandler.close()
+        except FileNotFoundError:
+            return None
+            
+        
+        return result
+        
+    def save(self):
+        tool_name = self.tool_data['name']
+        f = open(tool_name+'.json', 'w')
+        f.write(json.dumps(self.tool_data))
+        f.close()
         
     
     def loadToolInfo(self, data=None):
@@ -311,10 +345,192 @@ class pipettor(mobile_tool):
         self.readAll()
 
 
+# Some functions may involve both mobile and immobile touch probes simultaneously;
+# and so, have to be moved out of the classes.
+# Example is calibration of stalagmite against stalaktite; during which
+# both are checked for whether they touch anything.
+
+def approachUntilTouch(robot, touch_function, axis, step, speed_xy=None, speed_z=None):
+    """
+    Arnie will move along specified "axis" by "step"
+        Inputs
+            robot
+                Arnie instance
+            touch_function
+                Function used to evaluate whether probe is touching anything. 
+                Example:
+                    p = mobile_touch_probe.getTool(robot)
+                    touch_function = p.isNotTouched
+                    approachUntilTouch(robot, touch_function, 'x', 5)
+            axis
+                string, "x", "y" or "z"
+            step
+                distance to move at every step
+            speed_xy, speed_z
+                axis moving speed. Using robot defaults at cartesian.py
+    """
+    
+    # Getting speed defaults from the robot instance.
+    if speed_xy is None:
+        speed_xy = robot.speed_x
+    if speed_z is None:
+        speed_z = robot.speed_z
+    
+    dC = robot.axisToCoordinates(axis, step)
+    
+    while touch_function():
+        robot.move_delta(dx=dC[0], dy=dC[1], dz=dC[2], speed_xy=speed_xy, speed_z=speed_z)
+    
+    return robot.getAxisPosition(axis)
+
+
+def findWall(probe, axis, direction, second_probe=None, step_dict=None, step_back_length=3):
+    """
+    Find coordinate of the wall on given "axis".
+    Will move on "axis" into "direction", until touch probe detects collision. Then it 
+    retracts until probe stops detecting collision. Then it approaches again with finer steps,
+    until collision detected. This cycle repeats several times according to step_dict
+    
+    After that, it retracts on "step_back_length".
+    
+    Parameters:
+        axis
+            axis at which to perform calibration; only allowed "X", "Y" or "Z".
+        direction
+            direction at which to move robot; 
+            eiter +1 or -1. +1 moves further from homing point; -1 - towards homing point
+        step_dict
+            Dictionary containing instructions on how to perform approach and retraction
+            (step sizes, speeds). 
+            Dictionary contains keys, all numbered as 0, 1, 2, ...
+            Each key points to a dictionary of the form:
+            {'step_fwd': 12, 'speed_xy_fwd': 5000, 'speed_z_fwd':5000,
+                'step_back': 12, 'speed_xy_back': 5000, 'speed_z_back':5000}
+            Overall dictionary looks like this:
+            step_dict = {
+                0: {'step_fwd': 12, 'speed_xy_fwd': 5000, 'speed_z_fwd':5000,
+                    'step_back': 12, 'speed_xy_back': 5000, 'speed_z_back':5000},
+                1: {'step_fwd': 3, 'speed_xy_fwd': 2000, 'speed_z_fwd':3000,
+                    'step_back': 6, 'speed_xy_back': 5000, 'speed_z_back':2000},
+                ...
+            }
+        step_back_length
+            distance to retract after finishing calibration; default is 5.
+    
+    Returns coordinate at which collision was detected during finest approach.
+    """
+    # Sanity checks --------------------------------------------------------------------------------------------------------
+    # direction should be either 1 or -1
+    if direction != 1 and direction != -1:
+        logging.error("Mobile touch probe, findWall(): wrong direction provided.")
+        logging.error("Possible values are 1 or -1; provided value: %s", direction)
+        return
+    #  --------------------------------------------------------------------------------------------
+    
+    # If settings dictionary is not provided, the following ones will be used.
+    # TODO: make them loadable from settings file
+    if step_dict is None:
+        step_dict = probe.step_dict
+        
+    # Iterating through dictionary keys in the right order; i.e. starting from smallest
+    for key in range(0, len(step_dict)):
+        current_step_dict = step_dict[key]
+        
+        if second_probe is not None:
+            def retract_touch_function():
+                return (probe.isTouched() or second_probe.isTouched())
+            def forward_touch_function():
+                return (probe.isNotTouched() and second_probe.isNotTouched())
+        else:
+            retract_touch_function = probe.isTouched
+            forward_touch_function = probe.isNotTouched
+        
+        # Going backwards until touch probe no longer touches anything
+        approachUntilTouch(robot=probe.robot, touch_function=retract_touch_function,
+            axis=axis,
+            step=(-direction * current_step_dict['step_back']),
+            speed_xy=current_step_dict['speed_xy_back'], 
+            speed_z=current_step_dict['speed_z_back'])
+        
+        # Going forward until hitting the wall
+        coord = approachUntilTouch(robot=probe.robot, touch_function=forward_touch_function,
+            axis=axis, 
+            step=(direction * current_step_dict['step_fwd']), 
+            speed_xy=current_step_dict['speed_xy_fwd'], 
+            speed_z=current_step_dict['speed_z_fwd'])
+            
+    # Retracting after calibration is finished
+    [dx, dy, dz] = probe.robot.axisToCoordinates(axis=axis, value=(-direction * step_back_length))
+    probe.robot.move_delta(dx=dx, dy=dy, dz=dz)
+    
+    return coord
+
+
+def findWallManyPoints(probe, axis, direction, touch_coord_list, 
+        second_probe=None, step_dict=None, step_back_length=3):
+    """
+    Probe wall against many points.
+    
+    Returns
+        List of measured collision coordinates against a given axis
+    """
+    robot = probe.robot
+    points_list = []
+    for coord in touch_coord_list:
+        if axis == 'x':
+            robot.moveAxis(axis='y', destination=coord)
+        else:
+            robot.moveAxis(axis='x', destination=coord)
+        wall_coord = findWall(probe=probe, axis=axis, direction=direction,
+                                   second_probe=second_probe,
+                                   step_dict=step_dict,
+                                   step_back_length=step_back_length)
+        points_list.append(wall_coord)
+    return points_list
+    
+    
+def findCenterOuterTwoProbes(probe1, probe2, axis, raise_height, dist_through_obstruct,
+                        step_dict=None, step_back_length=3, opposite_side_dist=0, direction=1):
+    # Find first wall
+    front_wall = findWall(probe=probe1, 
+                     axis=axis, 
+                     direction=direction, 
+                     step_dict=step_dict, 
+                     second_probe=probe2)
+    # Raise gantry
+    probe1.robot.move_delta(dz=-raise_height)
+    # Move through obstruction
+    probe1.robot.moveAxisDelta(axis=axis, value=direction*dist_through_obstruct)
+    # Lower gantry back
+    probe1.robot.moveAxisDelta(axis='z', value=raise_height)
+    # Find opposite side of the wall
+    rear_wall = findWall(probe=probe1, 
+                     axis=axis, 
+                     direction=-direction, 
+                     step_dict=step_dict,
+                     second_probe=probe2)
+    # Calculateing center
+    center = (front_wall + rear_wall) / 2.0
+    return center
+
+
 class touch_probe():
     """
     Handles behavior of all touch probes, either mobile, or fixed position.
     """
+    
+    step_dict = {
+                0: {'step_fwd': 12, 'speed_xy_fwd': 5000, 'speed_z_fwd':5000,
+                    'step_back': 12, 'speed_xy_back': 5000, 'speed_z_back':5000},
+                1: {'step_fwd': 3, 'speed_xy_fwd': 2000, 'speed_z_fwd':3000,
+                    'step_back': 6, 'speed_xy_back': 5000, 'speed_z_back':2000},
+                2: {'step_fwd': 0.75, 'speed_xy_fwd': 200, 'speed_z_fwd':1000,
+                    'step_back': 1.5, 'speed_xy_back': 500, 'speed_z_back':1000},
+                3: {'step_fwd': 0.2, 'speed_xy_fwd': 100, 'speed_z_fwd':1000,
+                    'step_back': 0.4, 'speed_xy_back': 100, 'speed_z_back':1000},
+                4: {'step_fwd': 0.05, 'speed_xy_fwd': 25, 'speed_z_fwd':1000,
+                    'step_back': 0.1, 'speed_xy_back': 50, 'speed_z_back':1000},
+            }
     
     def isTouched(self):
         self.write('d')
@@ -327,155 +543,32 @@ class touch_probe():
     
 
     def approachUntilTouch(self, axis, step, retract=False, speed_xy=None, speed_z=None):
-        """
-        Arnie will move along specified "axis" by "step"
-            Inputs
-                axis - string, "x", "y" or "z"
-                step - distance to move at every step
-                retract - if True, function will inverse its behavior; i.e. keep 
-                    moving while touch probe is engaged, and stop when touch
-                    probe gets disengaged
-                speed_xy, speed_z - axis moving speed. Using robot defaults at cartesian.py
-        """
-        
-        axis = axis.lower()
-        
-        # Getting speed defaults from the robot instance.
-        if speed_xy is None:
-            speed_xy = self.robot.speed_x
-        if speed_z is None:
-            speed_z = self.robot.speed_z
-        
-        dC = self.robot.axisToCoordinates(axis, step)
-        
         # Determining condition at which movement will continue.
         if retract:
             # Function assumes touch probe is touching something
             # Goal is to move until probe stops touching
-            movingConditionEvaluator = self.isTouched
+            touch_function = self.isTouched
         else:
             # Function assumes touch probe is not touching anything
             # Goal is to move until it starts touching
-            movingConditionEvaluator = self.isNotTouched
+            touch_function = self.isNotTouched
         
-        while movingConditionEvaluator():
-            self.robot.move_delta(dx=dC[0], dy=dC[1], dz=dC[2], speed_xy=speed_xy, speed_z=speed_z)
-            position = self.robot.getPosition()
-        x, y, z = self.robot.getPosition()
-        
-        if axis == 'x':
-            return x
-        elif axis == 'y':
-            return y
-        elif axis== 'z':
-            return z
-        else:
-            return
+        return approachUntilTouch(self.robot, touch_function, axis, step, speed_xy=None, speed_z=None)
 
 
     def findWall(self, axis, direction, step_dict=None, step_back_length=3):
-        """
-        Find coordinate of the wall on given "axis".
-        Will move on "axis" into "direction", until touch probe detects collision. Then it 
-        retracts until probe stops detecting collision. Then it approaches again with finer steps,
-        until collision detected. This cycle repeats several times according to step_dict
-        
-        After that, it retracts on "step_back_length".
-        
-        Parameters:
-            axis
-                axis at which to perform calibration; only allowed "X", "Y" or "Z".
-            direction
-                direction at which to move robot; 
-                eiter +1 or -1. +1 moves further from homing point; -1 - towards homing point
-            step_dict
-                Dictionary containing instructions on how to perform approach and retraction
-                (step sizes, speeds). 
-                Dictionary contains keys, all numbered as 0, 1, 2, ...
-                Each key points to a dictionary of the form:
-                {'step_fwd': 12, 'speed_xy_fwd': 5000, 'speed_z_fwd':5000,
-                    'step_back': 12, 'speed_xy_back': 5000, 'speed_z_back':5000}
-                Overall dictionary looks like this:
-                step_dict = {
-                    0: {'step_fwd': 12, 'speed_xy_fwd': 5000, 'speed_z_fwd':5000,
-                        'step_back': 12, 'speed_xy_back': 5000, 'speed_z_back':5000},
-                    1: {'step_fwd': 3, 'speed_xy_fwd': 2000, 'speed_z_fwd':3000,
-                        'step_back': 6, 'speed_xy_back': 5000, 'speed_z_back':2000},
-                    ...
-                }
-            step_back_length
-                distance to retract after finishing calibration; default is 5.
-        
-        Returns coordinate at which collision was detected during finest approach.
-        """
-        # Sanity checks --------------------------------------------------------------------------------------------------------------------
-        # direction should be either 1 or -1
-        if direction != 1 and direction != -1:
-            logging.error("Mobile touch probe, findWall(): wrong direction provided.")
-            logging.error("Possible values are 1 or -1; provided value: %s", direction)
-            return
-        
-        # Checking whether axes specified properly
-        axis = axis.upper()
-        if axis != "X" and axis != "Y" and axis != "Z":
-            logging.error("Mobile touch probe, findWall(): wrong axis provided.")
-            logging.error("Possible values are X, Y or Z; provided value: %s", axis)
-            print("ERROR: wrong axis specified. Only allowed X, Y or Z")
-            print(axis)
-            return
-        #  --------------------------------------------------------------------------------------------
-        
-        # If settings dictionary is not provided, the following ones will be used.
-        # TODO: make them loadable from settings file
         if step_dict is None:
-            step_dict = {
-                0: {'step_fwd': 12, 'speed_xy_fwd': 5000, 'speed_z_fwd':5000,
-                    'step_back': 12, 'speed_xy_back': 5000, 'speed_z_back':5000},
-                1: {'step_fwd': 3, 'speed_xy_fwd': 2000, 'speed_z_fwd':3000,
-                    'step_back': 6, 'speed_xy_back': 5000, 'speed_z_back':2000},
-                2: {'step_fwd': 0.75, 'speed_xy_fwd': 200, 'speed_z_fwd':1000,
-                    'step_back': 1.5, 'speed_xy_back': 500, 'speed_z_back':1000},
-                3: {'step_fwd': 0.2, 'speed_xy_fwd': 100, 'speed_z_fwd':1000,
-                    'step_back': 0.4, 'speed_xy_back': 100, 'speed_z_back':1000},
-                4: {'step_fwd': 0.05, 'speed_xy_fwd': 25, 'speed_z_fwd':1000,
-                    'step_back': 0.1, 'speed_xy_back': 50, 'speed_z_back':1000},
-            }
-            
-        # Iterating through dictionary keys in the right order; i.e. starting from smallest
-        for key in range(0, len(step_dict)):
-            current_step_dict = step_dict[key]
-            
-            # Going backwards until touch probe no longer touches anything
-            self.approachUntilTouch(axis=axis, 
-                step=(-direction * current_step_dict['step_back']), 
-                retract=True,
-                speed_xy=current_step_dict['speed_xy_back'], 
-                speed_z=current_step_dict['speed_z_back'])
-            
-            # Going forward until hitting the wall
-            coord = self.approachUntilTouch(axis=axis, 
-                step=(direction * current_step_dict['step_fwd']), 
-                speed_xy=current_step_dict['speed_xy_fwd'], 
-                speed_z=current_step_dict['speed_z_fwd'])
-                
-        # Retracting after calibration is finished
-        [dx, dy, dz] = self.robot.axisToCoordinates(axis=axis, value=(-direction * step_back_length))
-        self.robot.move_delta(dx=dx, dy=dy, dz=dz)
-        
-        return coord
+            step_dict = touch_probe.step_dict
+        return findWall(self, axis, direction, 
+                   step_dict=step_dict, 
+                   step_back_length=step_back_length)
         
     
     def findCenterInner(self, axis, step_dict=None, step_back_length=3, opposite_side_dist=0, direction=1):
-        axis = axis.lower()
         # Finding first wall
         front_wall = self.findWall(axis=axis, direction=direction, step_dict=step_dict)
         # Moving to the other wall
-        if axis == 'x':
-            self.robot.move_delta(dx=-direction*opposite_side_dist)
-        elif axis == 'y':
-            self.robot.move_delta(dy=-direction*opposite_side_dist)
-        else:
-            pass
+        self.robot.moveAxisDelta(axis=axis, value=-direction*opposite_side_dist)
         # Finding second wall
         rear_wall = self.findWall(axis=axis, direction=-direction, step_dict=step_dict)
         # Calculating center
@@ -503,14 +596,9 @@ class touch_probe():
         # Raise gantry
         self.robot.move_delta(dz=-raise_height)
         # Move through obstruction
-        if axis == 'x':
-            self.robot.move_delta(dx=direction*dist_through_obstruct)
-        elif axis == 'y':
-            self.robot.move_delta(dy=direction*dist_through_obstruct)
-        else:
-            pass
+        self.robot.moveAxisDelta(axis=axis, value=direction*dist_through_obstruct)
         # Lower gantry back
-        self.robot.move_delta(dz=raise_height)
+        self.robot.moveAxisDelta(axis='z', value=raise_height)
         # Find opposite side of the wall
         rear_wall = self.findWall(axis=axis, direction=-direction, step_dict=step_dict)
         # Calculateing center
@@ -523,6 +611,7 @@ class mobile_touch_probe(mobile_tool, touch_probe):
 
     def __init__(self, robot, com_port_number=None, 
                  tool_name='mobile_probe', welcome_message='mobile touch probe'):
+        self.step_dict = touch_probe.step_dict
         super().__init__(robot, com_port_number=com_port_number, 
                  tool_name=tool_name,
                  welcome_message=welcome_message)
@@ -545,6 +634,7 @@ class stationary_touch_probe(tool, touch_probe):
     """
     def __init__(self, robot, com_port_number=None, 
                  tool_name='stationary_probe', welcome_message='stationary touch probe'):
+        self.step_dict = touch_probe.step_dict
         super().__init__(robot=robot, com_port_number=com_port_number, 
                  tool_name=tool_name,
                  welcome_message=welcome_message)

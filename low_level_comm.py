@@ -62,6 +62,8 @@ class serial_device():
                 Default is '\r'
         """
         
+        
+        
         self.port_name = port_name
         logging.info("Port %s: Initialization of a device started.", self.port_name)
         logging.info("Port %s: Expected welcome message:  %s", self.port_name, welcome_message)
@@ -77,12 +79,13 @@ class serial_device():
 
         self.baudrate = baudrate
         self.timeout = timeout
-
+        
         self.openSerialPort(port_name, baudrate, timeout)
         
         # Reading welcome message from the device connected
         logging.info("Port %s: Welcome message received:", self.port_name)
         self.actual_welcome_message = self.readAll(delay=welcome_message_delay)
+        
         # Cleaning input buffer from some extra messages
         self.port.flushInput()
 

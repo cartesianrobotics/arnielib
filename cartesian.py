@@ -25,7 +25,7 @@ DOCKER_WELCOME = "Arnie's universal dock controller"
 # Axis moving speed
 SPEED_X = 8000
 SPEED_Y = 8000
-SPEED_Z = 5000
+SPEED_Z = 3000
 SPEED_Z_MOVING_DOWN = 8000 # Robot can move down much faster than up.
 
 # Homing command
@@ -34,10 +34,12 @@ SPEED_Z_MOVING_DOWN = 8000 # Robot can move down much faster than up.
 HOMING_CMD = 'G28'
 
 # Operations with a tool
-OPEN_TOOL_G_CODE = "M280 P1 S10"
+#OPEN_TOOL_G_CODE = "M280 P1 S10"
 OPEN_TOOL_DELAY = 1 # seconds
-CLOSE_TOOL_G_CODE = "M280 P1 S80"
-CLOSE_TOOL_DELAY = 1 # seconds
+#CLOSE_TOOL_G_CODE = "M280 P1 S80"
+CLOSE_TOOL_DELAY = 3.5 # seconds
+OPEN_TOOL_SERVO_ANGLE = 10
+CLOSE_TOOL_SERVO_ANGLE = 110
 
 # Moving G-code command: G0 X<value> Y<value> Z<value> F<value>
 
@@ -175,9 +177,10 @@ class arnie(llc.serial_device):
                 library default is used.
         """
         
+        axis = self.checkAxis(axis)
         axis=axis.upper()
-        if speed == None:
-            speed = self.speed[axis_index(axis)]
+        if speed is None:
+            speed = self.assignSpeedByAxis(axis)
         speed_cmd = 'F' + str(speed)
         full_cmd = 'G0 ' + axis + str(destination) + ' ' + speed_cmd
         
@@ -209,7 +212,7 @@ class arnie(llc.serial_device):
                 Speed is measured in arbitrary units.
         """
         if speed == None:
-            speed = self.speed[axis_index("X")]
+            speed = assignSpeedByAxis('x')
         full_cmd = 'G0 X' + str(x) + ' Y' + str(y) + ' F' + str(speed)
         try:
             logging.info("moveXY: Moving carriage to the new position with coordinates:")
@@ -247,9 +250,9 @@ class arnie(llc.serial_device):
         """
         
         if speed_xy == None:
-            speed_xy = self.speed[axis_index("X")]
+            speed_xy = self.assignSpeedByAxis('x')
         if speed_z == None:
-            speed_z = self.speed[axis_index("Z")]
+            speed_z = self.assignSpeedByAxis('z')
         
         logging.info("move: Moving carriage to the new position with coordinates:")
         logging.info("move: X=%s, Y=%s, Z=%s with X and Y speed %s, Z speed %s", 
@@ -307,49 +310,39 @@ class arnie(llc.serial_device):
         
         # Moving Arnie
         self.move(new_x, new_y, new_z, z_first=z_first, speed_xy=speed_xy, speed_z=speed_z)
+
+
+    def moveAxisDelta(self, axis, value, speed=None):
+        """
+        Moves robot to a new position relative to the current one.
+        
+        Inputs
+            axis
+                Axis along which to perform movement. Possible values: 'x', 'y' or 'z'
+            value
+                Relative distance to which to perform movement. 
+                Negative value moves axis closer to the homing position.
+            speed
+                Movement speed
+        """
+        axis = self.checkAxis(axis)
+        current_abs_position = self.getAxisPosition(axis=axis)
+        new_abs_position = current_abs_position + value
+        self.moveAxis(axis=axis, destination=new_abs_position, speed=speed)
+        
     
     def openTool(self):
         """Docker opens to accept a tool"""
-        
-        #open_tool_G_code = OPEN_TOOL_G_CODE
-        #sleep_time = OPEN_TOOL_DELAY
-        #
-        #logging.info("Arnie openTool: Opening tool docker to accept a new tool.")
-        #logging.info("Arnie openTool: G-code sent: %s, delay %s seconds.", open_tool_G_code, sleep_time)
-        #
-        ##time.sleep(0.5) # Checking whether firmware needs some time before accepting the next commnand
-        #self.writeAndWait("M400")
-        #self.writeAndWait(open_tool_G_code)
-        #self.writeAndWait("G4 P500")
-        #self.writeAndWait("M400")
-        #time.sleep(sleep_time)
-        
         logging.info("Arnie openTool: Opening tool docker to accept a new tool.")
-        self.docker.setServoPosition(10)
-        time.sleep(1)
+        self.docker.setServoPosition(OPEN_TOOL_SERVO_ANGLE)
+        time.sleep(OPEN_TOOL_DELAY)
         
         
     def closeTool(self):
-        """Docker closes, fixing a tool in place"""
-        #close_tool_G_code = CLOSE_TOOL_G_CODE
-        #sleep_time = CLOSE_TOOL_DELAY
-        #
-        #logging.info("Arnie closeTool: Closing tool docker, possibly with a new tool.")
-        #logging.info("Arnie closeTool: G-code sent: %s, delay %s seconds.", close_tool_G_code, sleep_time)
-        #self.getPosition() # This is done so the actual position is recorded in the log file.
-        #
-        ##time.sleep(0.5) # Checking whether firmware needs some time before accepting the next commnand
-        #self.writeAndWait("M400")
-        #self.writeAndWait(close_tool_G_code)
-        #self.writeAndWait("G4 P500")
-        #self.writeAndWait("M400")
-        ##self.writeAndWait(close_tool_G_code)
-        ##self.move_delta(0,0,0) # Added to make firmware do some actions
-        #time.sleep(sleep_time)
-        
+        """Docker closes, fixing a tool in place"""        
         logging.info("Arnie closeTool: Closing tool docker, possibly with a new tool.")
-        self.docker.setServoPosition(80)
-        time.sleep(1)
+        self.docker.setServoPosition(CLOSE_TOOL_SERVO_ANGLE)
+        time.sleep(CLOSE_TOOL_DELAY)
     
     def getPosition(self):
         """
@@ -372,6 +365,26 @@ class arnie(llc.serial_device):
         z = float(re.split(pattern="\:", string=z_str)[1])
         logging.info("Current cartesian robot coordinates are x=%s, y=%s, z=%s", x, y, z)
         return x, y, z
+    
+    
+    def getAxisPosition(self, axis=None):
+        """
+        Returns only position at provided axis
+        If no axis is provided, returns all three axes (works same as getPosition() ).
+        """
+        if axis is not None:
+            axis = self.checkAxis(axis)
+        x, y, z = self.getPosition()
+
+        if axis == 'x':
+            return x
+        elif axis == 'y':
+            return y
+        elif axis== 'z':
+            return z
+        else:
+            return x, y, z
+        
     
         
     def approachToolPosition(self, x, y, z, speed_xy=None, speed_z=None):
@@ -526,7 +539,7 @@ class arnie(llc.serial_device):
         returns
             (0, 5, 0)
         """
-        axis = axis.lower()
+        axis = self.checkAxis(axis)
         if nonetype:
             t = [None, None, None]
         else:
@@ -543,6 +556,30 @@ class arnie(llc.serial_device):
             print("Provide axis x, y or z")
         return t
 
+    
+    def assignSpeedByAxis(self, axis):
+        axis = self.checkAxis(axis)
+        if axis == 'x':
+            speed = self.speed_x
+        elif axis == 'y':
+            speed = self.speed_y
+        else:
+            speed = self.speed_z
+        return speed
+
+
+    # Sanity check functions
+    def checkAxis(self, axis):
+        """
+        Standartizes axis and checks for whether it is x, y or z.
+        """
+        axis=axis.lower()
+        if axis != "x" and axis != "y" and axis != "z":
+            logging.error("checkAxis: wrong axis provided")
+            logging.error("Possible values are 'x', 'y' or 'z'; provided value: %s", axis)
+            return
+        return axis
+    
 
 
     # TODO: This function is never used. Clean it? 
