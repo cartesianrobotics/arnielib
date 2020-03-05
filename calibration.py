@@ -239,6 +239,59 @@ def findXYCenterOuterMultiPoint(probe,
     return x_center, y_center
 
 
+
+def calibrateRack(probe, rack):
+    """
+    Calibrates square shaped object from outside.
+    Finds X, Y and Z.
+    """
+    
+    # Unpacking robot object (for convenience)
+    ar = probe.robot
+    
+    # Obtaining calibration parameters:
+    x_cal, y_cal, z_cal, opposite_x, orthogonal_y, raise_z = rack.getSimpleCalibrationPoints()
+    calibr_Z_dX, calibr_Z_dY, calibr_Z_dZ = rack.getRelativeZCalibrationPoint()
+    
+    # Moving to the initial calibration point
+    ar.move(x=x_cal, y=y_cal, z=z_cal, z_first=False)
+    
+    # Finding center by X
+    center_x = probe.findCenterOuter(axis='x', raise_height=raise_z, 
+        dist_through_obstruct=opposite_x)
+    
+    # Moving towards Y calibration
+    # Up
+    ar.moveAxisDelta(axis='z', value=-raise_z)
+    # To XY position for Y calibration
+    ar.move(x=center_x, y=y_cal-orthogonal_y)
+    # Down
+    ar.moveAxisDelta(axis='z', value=raise_z)
+    
+    # Finding center by Y
+    center_y = probe.findCenterOuter(axis='y', raise_height=raise_z, dist_through_obstruct=orthogonal_y*2.0)
+    
+    # Moving towards Z calibration
+    # Up
+    ar.moveAxisDelta(axis='z', value=-raise_z)
+    # To Z calibration point using recently discovered coordinates of the center of the rack.
+    ar.move(x=center_x+calibr_Z_dX, y=center_y+calibr_Z_dY)
+    slot_x, slot_y, slot_z = rack.getSavedSlotCenter()
+    ar.move(z=slot_z-rack.max_height+calibr_Z_dZ)
+    
+    # Finding Z height
+    z = probe.findWall(axis='z', direction=1)
+    
+    # Obtaining calibration data of the probe against stationary probe
+    stp_x, stp_y, stp_z = probe.getStalagmyteCoord()
+    
+    # Saving data in rack object
+    rack.updateCenter(x=center_x, y=center_y, z=z, x_btm_touch=stp_x, y_btm_touch=stp_y, z_btm_touch=stp_z)
+    rack.save()
+    
+    return center_x, center_y, z
+
+
 # TODO: Remove as this function also appears at rack class.
 def calcWellsXY(x_cntr, y_cntr, x_dist_1st_cntr, y_dist_1st_cntr, dist_wells_x, dist_wells_y, x_wells, y_wells):
     """
@@ -266,51 +319,108 @@ def calcWellsXY(x_cntr, y_cntr, x_dist_1st_cntr, y_dist_1st_cntr, dist_wells_x, 
     return coord_list
 
 
-def calibrateStalagmite(probe, immoprobe, n_x, n_y, ball_diam=16, stalagmite_height=110,
-        calibration_dz=10, dist_from_wall=10):
+def calibrateTool(tool, stationary_probe):
     """
-    Calibrate stalagmite against stalaktite
-    Function assumes that mobile touch probe is already picked up, 
-    immobile touch probe installed, and both are connected.
+    Calibrates a tool (docked to the gantry) against stationary touch probe
+
+    Inputs:
+        tool
+            Object of a tool
+        stationary_probe
+            Object of a stationary touch probe    
+    """
+    
+    # Unpacking robot object (for convenience)
+    ar = tool.robot
+    
+    # Obtaining calibration parameters:
+    x_cal, y_cal, z_cal, opposite_x, orthogonal_y, raise_z = stationary_probe.rack.getSimpleCalibrationPoints()
+    # Accounting for the fact that tools are of different length than a mobile touch probe
+    # (which is considered standard)
+    tool_longer_than_mobile_probe_by = tool.delta_length_for_calibration
+    z_cal = z_cal - tool_longer_than_mobile_probe_by
+    
+    # Moving to the initial calibration point
+    ar.move(x=x_cal, y=y_cal, z=z_cal, z_first=False)
+    
+    # Finding center by X
+    center_x = stationary_probe.findCenterOuter(axis='x', raise_height=raise_z, 
+        dist_through_obstruct=opposite_x)
+    
+    # Moving towards Y calibration
+    # Up
+    ar.moveAxisDelta(axis='z', value=-raise_z)
+    # To XY position for Y calibration
+    ar.move(x=center_x, y=y_cal-orthogonal_y)
+    # Down
+    ar.moveAxisDelta(axis='z', value=raise_z)
+    
+    # Finding center by Y
+    center_y = stationary_probe.findCenterOuter(axis='y', raise_height=raise_z, dist_through_obstruct=orthogonal_y*2.0)
+    
+    # Moving towards Z calibration
+    # Up
+    ar.moveAxisDelta(axis='z', value=-raise_z)
+    # To Z calibration point using recently discovered coordinates of the center of the rack.
+    ar.move(x=center_x, y=center_y)
+    
+    # Finding Z height
+    z = stationary_probe.findWall(axis='z', direction=1)
+
+    # Saving calibration points for mobile_probe, as they will be used for further objects calibrations
+    tool.setStalagmyteCoord(center_x, center_y, z)
+    
+    return center_x, center_y, z    
+    
+    
+def calibrateStationaryProbe(mobile_probe, stationary_probe):
+    """
+    Calibrate stationary probe against mobile probe; 
+    to find absolute interaction point between robot gantry and floor.
+    Assumed mobile probe is already picked up, and stationary probe connected
+    and ready to work.
     
     Inputs:
-        probe
-            Object of a "stalaktite" mobile touch probe
-        immoprobe
-            Object of a "stalagmite" immobile touch probe
-        n_x, n_y 
-            slot position, column and row, correspondingly.
-        ball_diam
-            stalagmite tip ball diameter
-        stalagmite_height
-            distance from floor to the tip of the stalagmite
-            Default is 110.
-        calibration_dz
-            Calibration will be started at height z_cal = z_floor - stalagmite_height + calibration_dz
-        dist_from_wall
-            How far from the wall to start calibraiton
+        mobile_probe
+            Object of a mobile touch probe
+        stationary_probe
+            Object of a stationary touch probe
     """
+    # Unpacking robot object (for simplicity)
+    ar = mobile_probe.robot
     
-    # Finding center of the slot where the stalagmite is installed
-    # Using previous floor calibration
-    x, y = param.calcSquareSlotCenterFromVertices(n_x=n_x, n_y=n_y)
-    # Finding coordinates of slot bottom
-    z = param.getSlotZ(n_x=n_x, n_y=n_y)
+    # Obtaining calibration parameters:
+    x_cal, y_cal, z_cal, opposite_x, orthogonal_y, raise_z = stationary_probe.rack.getSimpleCalibrationPoints()
     
-    # Calculating other parameters for calibration
-    half_size = ball_diam / 2.0
-    opposite_side_dist = ball_diam + dist_from_wall * 2
-    # How much to retract by Y after finishing X calibration
-    orthogonal_retraction = half_size + dist_from_wall
+    # Moving to the initial calibration point
+    ar.move(x=x_cal, y=y_cal, z=z_cal, z_first=False)
     
-    # Finding coordinates from where to start calibration
-    start_x = x - half_size - dist_from_wall
-    start_y = y
-    start_z = z - stalagmite_height - calibration_dz
+    # Finding center by X
+    center_x = tools.findCenterOuterTwoProbes(mobile_probe, stationary_probe, axis='x')
     
-    # Moving robot (with probe already attached) to the starting coordinates
-    probe.robot.move(x=start_x, y=start_y, z=start_z, z_first=False)
+    # Moving towards Y calibration
+    # Up
+    ar.moveAxisDelta(axis='z', value=-raise_z)
+    # To XY position for Y calibration
+    ar.move(x=center_x, y=y_cal-orthogonal_y)
+    # Down
+    ar.moveAxisDelta(axis='z', value=raise_z)
+    # Finding center by Y
+    center_y = tools.findCenterOuterTwoProbes(mobile_probe, stationary_probe, axis='y')
     
-    # Performing actual calibration
+    # Moving towards Z calibration
+    # Up
+    ar.moveAxisDelta(axis='z', value=-raise_z)
+    # To the center by XY (which was just discovered)
+    ar.move(x=center_x, y=center_y)
+    # Finding Z height
+    z = tools.findWall(probe=mobile_probe, axis='z', direction=1, second_probe=stationary_probe)
     
+    # Saving data for stationary probe
+    stationary_probe.rack.updateCenter(x=center_x, y=center_y, z=z, 
+        x_btm_touch=center_x, y_btm_touch=center_y, z_btm_touch=z)
+    stationary_probe.rack.save()
+    # Saving calibration points for mobile_probe, as they will be used for further objects calibrations
+    mobile_probe.setStalagmyteCoord(center_x, center_y, z)
     
+    return center_x, center_y, z

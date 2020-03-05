@@ -73,6 +73,8 @@ class gripper(llc.serial_device):
         self.write(str(value))
         
 
+# TODO: Make it possible to change speeds in this class, so I don't need to write 
+# routines in tools clases.
 class arnie(llc.serial_device):
     """
     Class handling cartesian robot's basic operations and data

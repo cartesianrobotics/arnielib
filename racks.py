@@ -24,6 +24,11 @@ class rack():
                     directly providing dictionary with properties
         """
         
+        # TODO: rack_data must contain two position parameters:
+        # 1: slot x,y,z; obtained by empty slot calibration
+        # 2: rack x,y,z; obtained by calibrating rack
+        # In some cases, when calibrating rack Z is hard or impossible or makes no sense,
+        # slot_z might be = to rack_z; but that is individual
         self.rack_data = rack_data
         
         # Attempting to read data from HD
@@ -48,18 +53,39 @@ class rack():
             # Using provided or saved rack type, load rack properties from config file
             config = configparser.ConfigParser()
             config_path = 'configs/' + rack_type + '.ini'
+            
+            #print (config_path)
             config.read(config_path)
-        
+            
+            #print (config_path)
+            
             self.z_height = float(config['geometry']['z_box_height'])
             self.max_height = float(config['geometry']['z_max_height'])
             self.x_width = float(config['geometry']['x_max_width'])
             self.y_width = float(config['geometry']['y_max_width'])
+            self.z_working_height = float(config['geometry']['z_working_height'])
             
             self.x_init_calibrat_dist_from_wall = float(config['calibration']['x_init_distance_from_wall'])
             self.y_init_calibrat_dist_from_wall = float(config['calibration']['y_init_distance_from_wall'])
             self.z_init_calibrat_dist_from_wall = float(config['calibration']['z_init_distance_from_wall'])
             self.xy_calibrat_height_dz = float(config['calibration']['xy_calibration_height'])
             self.dz_clearance = float(config['calibration']['dz_clearance'])
+            # Parameters to calibrate Z axis of a rack.
+            # In case they are not provided in the config file, Z axis will be 
+            # calibrated at the center of the rack.
+            try:
+                self.z_calibration_dxdy_coord = [
+                    float(config['calibration']['z_calibration_dx_coord']), 
+                    float(config['calibration']['z_calibration_dy_coord']), 
+                    ]
+            except:
+                self.z_calibration_dxdy_coord = [0, 0]
+            try:
+                self.z_calibration_dz = float(config['calibration']['z_calibration_dz'])
+            except:
+                self.z_calibration_dz = 0
+            
+            
             
             self.columns = int(config['wells']['columns'])
             self.rows = int(config['wells']['rows'])
@@ -67,6 +93,7 @@ class rack():
             self.dist_between_rows = float(config['wells']['distance_between_rows'])
             self.dist_cntr_to_1st_col = float(config['wells']['distance_center_to_1st_column'])
             self.dist_cntr_to_1st_row = float(config['wells']['distance_center_to_1st_row'])
+            
             
 
     def openFileWithRackParameters(self, path):
@@ -87,6 +114,9 @@ class rack():
 # TODO: Make a separate class to handle floor, get rid of param altogether.
     def getSavedSlotCenter(self):
         
+        #try:
+        #    [x, y, z] = self.rack_data['position']
+        #except:
         x_slot = self.rack_data['n_x']
         y_slot = self.rack_data['n_y']
         
@@ -96,6 +126,25 @@ class rack():
         return x, y, z
     
     
+    def getCalibratedRackCenter(self):
+        try:
+            [x, y, z] = self.rack_data['position']
+            return x, y, z
+        except KeyError:
+            logging.error('rack.getCalibratedRackCenter: Rack is not calibrated.')
+            logging.error('Run calibration first. See calibration routines')
+        
+        
+    def updateCalibratedRackCenter(self, x, y, z):
+        self.rack_data['position'] = [x, y, z]
+
+    def getStalagmyteCalibration(self):
+        [x, y, z ] = self.rack_data['pos_stalagmyte']
+        
+    def updateStalagmyteCalibration(self, x, y, z):
+        self.rack_data['pos_stalagmyte'] = [x, y, z]
+    
+    
     def getSimpleCalibrationPoints(self):
         x_cntr, y_cntr, z_cntr = self.getSavedSlotCenter()
         
@@ -103,21 +152,29 @@ class rack():
         y_start = y_cntr
         z_start = z_cntr - self.z_height + self.xy_calibrat_height_dz
         
-        opposite_side_dist = x_start + self.x_width + self.x_init_calibrat_dist_from_wall * 2.0
+        opposite_side_dist = self.x_width + self.x_init_calibrat_dist_from_wall * 2.0
         orthogonal_retraction = self.y_width / 2.0 + self.y_init_calibrat_dist_from_wall
-        box_top_z_coord = z_cntr - self.max_height
-        raise_height = abs(z_start - box_top_z_coord) - self.dz_clearance
+        box_top_z_coord = self.calcAbsoluteTopZ()
+        raise_height = abs(z_start - box_top_z_coord) + self.dz_clearance
+        
+        #print (raise_height, z_start, z_cntr, self.z_height, self.xy_calibrat_height_dz, box_top_z_coord, self.dz_clearance)
         
         return x_start, y_start, z_start, opposite_side_dist, orthogonal_retraction, raise_height    
     
     
+    def getRelativeZCalibrationPoint(self):
+        """
+        Provides dX, dY, dZ to use in rack Z calibration.
+        dX and dY should be added to center_X and center_Y, respectfully, and 
+        dZ should be added to self.max_height
+        """
+        return self.z_calibration_dxdy_coord[0], self.z_calibration_dxdy_coord[1], self.z_calibration_dz
+    
+    
     def calcWellsPositions(self):
         
-        try:
-            [x, y, z] = self.rack_data['position']
-        except:
-             x, y, z = self.getSavedSlotCenter()
-             
+        [x, y, z] = self.getCalibratedRackCenter()
+        
         coord_1st_x = x - self.dist_cntr_to_1st_col
         coord_1st_y = y - self.dist_cntr_to_1st_row
         
@@ -144,24 +201,49 @@ class rack():
         return coord_list[well_col][well_row][0], coord_list[well_col][well_row][1]
     
     
-    def updateCenter(self, x, y, z, x_btm_touch, y_btm_touch, z_btm_touch):
+    def calcWorkingPosition(self, well_col, well_row, tool=None):
+        
+        #print (self.rack_data)
+        x, y = self.calcWellXY(well_col, well_row)
+        x_slot, y_slot, z_calibr = self.getCalibratedRackCenter()
+        z = z_calibr + self.z_working_height
+
+        # Checking whether stalagmyte data are present in the rack object:
         try:
-            pos = self.rack_data['position']
-            pos_btm_touch = self.rack_data['pos_stalagmyte']
+            self.rack_data['pos_stalagmyte']
+            use_stalagmyte = True
         except:
-            pos = [0, 0, 0]
-            pos_btm_touch = [0, 0, 0]
+            use_stalagmyte = False
+            
+        if use_stalagmyte:
+            try:
+                tool_stal_x = tool.immob_probe_x
+                tool_stal_y = tool.immob_probe_y
+                tool_stal_z = tool.immob_probe_z
+            except:
+                [tool_stal_x, tool_stal_y, tool_stal_z] =  self.rack_data['pos_stalagmyte']
+            
+            [tp_stal_x, tp_stal_y, tp_stal_z] = self.rack_data['pos_stalagmyte']
+            
+            dx = tp_stal_x - tool_stal_x
+            dy = tp_stal_y - tool_stal_y
+            dz = tp_stal_z - tool_stal_z
+        else:
+            dx = 0
+            dy = 0
+            dz = 0
         
-        pos[0] = x
-        pos[1] = y
-        pos[2] = z
-        
-        pos_btm_touch[0] = x_btm_touch
-        pos_btm_touch[1] = y_btm_touch
-        pos_btm_touch[2] = z_btm_touch
-        
-        self.rack_data['position'] = pos
-        self.rack_data['pos_stalagmyte'] = pos_btm_touch
+        return x - dx, y - dy, z - dz
+    
+    
+    def calcAbsoluteTopZ(self):
+        [x, y, z] = self.getSavedSlotCenter()
+        return z - self.max_height
+    
+    
+    def updateCenter(self, x, y, z, x_btm_touch, y_btm_touch, z_btm_touch):
+        self.updateCalibratedRackCenter(x, y, z)
+        self.updateStalagmyteCalibration(x_btm_touch, y_btm_touch, z_btm_touch)
 
     
     def save(self):

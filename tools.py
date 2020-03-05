@@ -5,12 +5,14 @@ Module handling tools for the robot, both mobile and floor-based
 import logging
 from copy import deepcopy
 import re
+import cartesian as cart    # TODO: Remove it when finishing refactoring.
+import json
+import configparser
 
 # Internal arnielib modules
 import low_level_comm as llc
 import param
-import cartesian as cart    # TODO: Remove it when finishing refactoring.
-import json
+import racks
 
 SPEED_Z_MOVING_DOWN = 8000 # Robot can move down much faster than up.
 
@@ -39,7 +41,8 @@ class tool(llc.serial_device):
     Parent class, handling tools
     """
     
-    def __init__(self, robot, com_port_number=None, tool_name=None,
+    def __init__(self, robot, com_port_number=None, 
+                 tool_name=None, tool_type=None, rack_name=None, rack_type=None,
                  welcome_message=None, tool_data=None):
         """
         Handles any general tool properties; that any tool will have.
@@ -60,6 +63,7 @@ class tool(llc.serial_device):
         
         self.tool_data = tool_data
         
+        
         # Tool will get control of the robot to tell it where to move itself,
         # or what operation may be needed.
         self.robot = robot
@@ -71,6 +75,26 @@ class tool(llc.serial_device):
         # Populating dictionary with current rack properties
         if self.tool_data is None:
             self.tool_data = {}
+        
+        # Initialize rack
+        rack_type, rack_name, tool_type, tool_name = self._populateNames(rack_type, rack_name, tool_type, tool_name)
+        self.rack = racks.rack(rack_name=rack_name, rack_type=rack_type)
+        
+        # Reading settings data for the tool
+        # Using provided or saved tool type, load rack properties from config file
+        # Tool has 2 sets of settings: for the rack and for the tool itself.
+        # Rack settings contain all information relating storage place of that tool,
+        # such as tool rack geometry and pickup instructions.
+        # Tool only has information which relates to the tool itself, 
+        # such as tool geometry.
+        config = configparser.ConfigParser()
+        config_path = 'configs/' + tool_type + '.ini'
+        config.read(config_path)
+        
+        # How much longer the tool is compared to the mobile touch probe.
+        # This setting to be used only for calibration purposes, 
+        # after which obtained Z coordinate will be used for the other operations.
+        self.delta_length_for_calibration = float(config['calibration']['delta_length_for_calibration'])
         
         if tool_name is not None:
             self.tool_name = tool_name
@@ -94,13 +118,32 @@ class tool(llc.serial_device):
                 logging.error("Tool initialization: No serial port name provided.")
                 return
         
-        #self.loadToolInfo()
-        
         super().__init__(com_port_number, welcome_message=self.welcome_message)
+
         
+    def _populateNames(self, rack_type=None, rack_name=None, tool_type=None, tool_name=None):
+        """
+        Initializes rack
+        """
+        
+        if (tool_name is None) and (tool_type is not None):
+            tool_name = tool_type
+        
+        if (tool_type is None) and (tool_name is not None):
+            tool_type = tool_name
+        
+        if rack_type is None:
+            rack_type = tool_type + '_rack'
+        
+        if rack_name is None:
+            rack_name = rack_type
+
+        return rack_type, rack_name, tool_type, tool_name
+
 
     @classmethod
-    def getToolFromSerialDev(cls, device, welcome_message=""):
+    def getToolFromSerialDev(cls, device, welcome_message="", 
+            tool_name=None, tool_type=None, rack_name=None, rack_type=None):
         """
         Initializa tool instance from already existing serial_device instance
         """
@@ -133,30 +176,15 @@ class tool(llc.serial_device):
         f = open(tool_name+'.json', 'w')
         f.write(json.dumps(self.tool_data))
         f.close()
-        
-    
-    def loadToolInfo(self, data=None):
-        try:
-            self.tool_data = param.getToolByName(name=self.tool_name, data=data)
-        except:
-            self.tool_data = {
-                'position': [self.x_dock, self.y_dock, self.z_dock],
-                'type': self.tool_name,
-            }
-        return self.tool_data
-        
-    
-    def saveToolInfo(self, data=None):
-        if data is None:
-            data = self.tool_data
-        param.saveTool(new_tool_data=data, tool_name=self.tool_name)
+
 
     
 class mobile_tool(tool):
     """
     Handles mobile tools (contrary to the tools with fixed position)
     """
-    def __init__(self, robot, com_port_number=None, tool_name=None,
+    def __init__(self, robot, com_port_number=None, 
+                 tool_name=None, tool_type=None, rack_name=None, rack_type=None,
                  welcome_message=None):
         """
         Handles any general tool properties; that any tool will have.
@@ -175,10 +203,15 @@ class mobile_tool(tool):
                 Safe height at which robot won't hit anything. Default is 0.
         """
         
-        try:
-            self.getDockingPointByToolName(tool_name=tool_name)
-        except:
-            pass
+        #try:
+        #    self.getDockingPointByToolName(tool_name=tool_name)
+        #except:
+        #    pass
+        
+        # TODO: Create process of checking all available tools for highest height, from that,
+        # calculate z_safe.
+        # z_safe is the height at which robot won't knock anything off even when using longest
+        # tool.
         
         # Setting safe Z value
         try:
@@ -190,11 +223,15 @@ class mobile_tool(tool):
             # If necessary, it can be chagned later.
             self.z_safe = 0
         
-        super().__init__(robot=robot, com_port_number=com_port_number, tool_name=tool_name,
+        super().__init__(robot=robot, com_port_number=com_port_number, 
+                 tool_name=tool_name, tool_type=tool_type, rack_name=rack_name, rack_type=rack_type,
                  welcome_message=welcome_message)
 
     @classmethod
-    def getToolAtCoord(cls, robot, x, y, z, z_init=0, speed_xy=None, speed_z=None, welcome_message=""):
+    def getToolAtCoord(cls, 
+            robot, x, y, z, z_init=0, speed_xy=None, speed_z=None, 
+            tool_name=None, tool_type=None, rack_name=None, rack_type=None,
+            welcome_message=None):
         """
         Get tool positioned at known absolute coordinates x, y, z.
         """
@@ -210,11 +247,16 @@ class mobile_tool(tool):
         cls.speed_z = speed_z
         cls.welcome_message = welcome_message
         
-        return cls.getToolFromSerialDev(robot=robot, device=device, welcome_message="")
+        return cls.getToolFromSerialDev(
+                    robot=robot, device=device, 
+                    tool_name=tool_name, tool_type=tool_type, rack_name=rack_name, rack_type=rack_type,
+                    welcome_message=welcome_message)
 
 
     @classmethod
-    def getToolFromSerialDev(cls, robot, device, welcome_message=""):
+    def getToolFromSerialDev(cls, robot, device, 
+            tool_name=None, tool_type=None, rack_name=None, rack_type=None,
+            welcome_message=None):
         """
         Initializa tool instance from already existing serial_device instance
         """
@@ -228,19 +270,74 @@ class mobile_tool(tool):
         #cls.z_dock = None
         #cls.z_safe = None
         
-        return cls(robot=robot, com_port_number=port_name, welcome_message=welcome_message)
+        return cls(robot=robot, com_port_number=port_name,
+                   tool_name=tool_name, tool_type=tool_type, rack_name=rack_name, rack_type=rack_type,
+                   welcome_message=welcome_message)
 
 
     @classmethod
-    def getTool(cls, robot, tool_name="", welcome_message=""):
+    def getTool(cls, robot,
+            tool_name=None, tool_type=None, rack_name=None, rack_type=None,
+            welcome_message=""):
         """
         Get tool using its name
         """
-        [x, y, z] = param.getToolDockingPoint(tool_name)
+               
+        if (tool_type is None) and (tool_name is not None):
+            tool_type = tool_name
+        if (tool_type is not None) and (tool_name is None):
+            tool_name = tool_type
+        if rack_type is None:
+            rack_type = tool_type + '_rack'
+        if rack_name is None:
+            rack_name = rack_type
+
+        cls.rack = racks.rack(rack_name=rack_name, rack_type=rack_type)
+        [x, y, z] = cls.rack.getCalibratedRackCenter()
+        z_height = cls.rack.z_height
+        z_working_height = cls.rack.z_working_height
+        # After exchanging slot height for calibrated rack point
+        #z_pickup = z - z_height - z_working_height
+        z_pickup = z - z_working_height
         cls.tool_name = tool_name
-        return cls.getToolAtCoord(robot=robot, x=x, y=y, z=z, welcome_message=welcome_message)
+        return cls.getToolAtCoord(robot=robot, 
+                x=x, y=y, z=z_pickup, 
+                tool_name=tool_name, tool_type=tool_type, rack_name=rack_name, rack_type=rack_type,
+                welcome_message=welcome_message)
 
 
+# Following two functions stores and returns coordinates of #stalagmyte.
+# After #stalagmyte calibration, the resulting coordinates are stored in the 
+# tool object. 
+# In case of a #mobile_touch_probe, they are then passed to the 
+# object of corresponding rack or immobile tool during calibration,
+# then both rack coordinates and stalagmyte coordinates are dumped into rack data.
+# In case of any other device, such as a pipettor, they are also passed to the
+# rack object, however not stored but used to adjust position of the tool relative to the rack.
+    def setStalagmyteCoord(self, x, y, z):
+        """
+        With this function, #mobile_tool (touch probe, pipettor, etc.) object 
+        receives coordinates of interaction with 
+        a #stalagmyte, or an #immobile_touch_probe
+        
+        Inputs:
+            x, y, z
+                Center of immobile touch probe
+        """
+        self.immob_probe_x = x
+        self.immob_probe_y = y
+        self.immob_probe_z = z
+
+    def getStalagmyteCoord(self):
+        """
+        Returns #stalagmyte (or #immobile_touch_probe) coordinates, that are 
+        saved in the object after calibration
+        """
+        return self.immob_probe_x, self.immob_probe_y, self.immob_probe_z
+
+# TODO: remove this completely?
+# Should be in rack class
+# See rack.updateCenter()
     def setDockingPoint(x, y, z, z_safe):
         self.x_dock = x
         self.y_dock = y
@@ -250,9 +347,11 @@ class mobile_tool(tool):
 
     def getDockingPointByToolName(self, tool_name=None):
         if tool_name is None:
-            tool_name = self.tool_name
-        [self.x_dock, self.y_dock, self.z_dock] = param.getToolDockingPoint(tool_name)
-        return [self.x_dock, self.y_dock, self.z_dock]
+            tool_name = self.tool_data['name']
+        x, y, z = self.rack.calcWorkingPosition(0, 0)
+        #print (self.rack.z_working_height)
+        #[self.x_dock, self.y_dock, self.z_dock] = param.getToolDockingPoint(tool_name)
+        return [x, y, z]
 
 
     def returnTool(self):
@@ -262,14 +361,22 @@ class mobile_tool(tool):
         Assumes that coordinates were already specified in one or another way
         """
         
-        if self.x_dock is None or self.y_dock is None or self.z_dock is None:
-            # Attempting to load docking points using tool name
-            self.getDockingPointByToolName()
-        if self.z_safe is None:
-            # Just setting safe height to be at the top of the robot
-            self.z_safe = 0
         
-        self.returnToolToCoord(self.x_dock, self.y_dock, self.z_dock, self.z_safe)
+        #if self.x_dock is None or self.y_dock is None or self.z_dock is None:
+        #    # Attempting to load docking points using tool name
+        #    self.getDockingPointByToolName()
+        #if self.z_safe is None:
+        #    # Just setting safe height to be at the top of the robot
+        #    self.z_safe = 0
+        #print (self.rack.rack_data)
+        #x, y, z = self.getDockingPointByToolName()
+        
+        [x, y, z] = self.rack.getCalibratedRackCenter()
+        z_height = self.rack.z_height
+        z_working_height = self.rack.z_working_height
+        z_return = z - z_working_height
+        # TODO: designe for z_safe
+        self.returnToolToCoord(x, y, z_return, z_init=0, speed_xy=None, speed_z=None)
 
 
     def returnToolToCoord(self, x, y, z, z_init, speed_xy=None, speed_z=None):
@@ -284,13 +391,29 @@ class mobile_tool(tool):
             self.close()
         except:
             pass
-        self.robot.returnToolToCoord(x, y, z, z_init, speed_xy, speed_z)
+        self.robot.returnToolToCoord(x, y, z, z_init=z_init, speed_xy=speed_xy, speed_z=speed_z)
     
     
 
 class pipettor(mobile_tool):
+
+    def __init__ (self, robot, tool_name, rack_name=None, rack_type=None, tool_type=None, com_port_number=None, 
+            welcome_message=None):
+        super().__init__(robot=robot, com_port_number=com_port_number,
+            tool_name=tool_name, welcome_message='Servo', rack_type='pipette_rack', rack_name=tool_name+'_rack')
+            
+    @classmethod
+    def getTool(cls, robot, tool_name):
+        """
+        Get touch probe from its saved position and initializes the object
+        """
+        #cls.tool_name = tool_name
+        cls.welcome_message="Servo"
+        return super().getTool(robot, 
+            tool_name=tool_name, welcome_message="Servo", rack_type='pipette_rack', rack_name=tool_name+'_rack')        
+    
     # TODO: Factor this function out into serial_device.
-    def write_wait(self, expression, confirm_message="Idle", eol=None):
+    def sendCmdToPipette(self, expression, confirm_message="Idle", eol=None):
         """
         Function will write an expression to the device and wait for the proper response.
         
@@ -304,8 +427,8 @@ class pipettor(mobile_tool):
         full_message = ""
         while True:
             message = self.readAll()
-            if message_level == "verbose":
-                print(message)
+#            if message_level == "verbose":
+#                print(message)
             if message != "":
                 full_message += message
                 if re.search(pattern=confirm_message, string=full_message):
@@ -313,11 +436,12 @@ class pipettor(mobile_tool):
             self.write("?")
 
     def home(self):
-        set_pipettor_speed(self, 400)
-        self.write_wait("$H")
-        self.readAll()
+        self.setPipettorSpeed(400)
+        self.sendCmdToPipette("$H")
+        self.switchModeToNormal()
+        #self.readAll()
     
-    def drop_tip(self, plunger_lower=-40, plunger_raise=-2):
+    def dropTip(self, plunger_lower=-40, plunger_raise=-2):
         """
         Tells currently connected pipettor to drop a tip. No checking is performed.
         Both parameters mean units to move plunger in absolute values.
@@ -332,17 +456,30 @@ class pipettor(mobile_tool):
             - plunger_raise: Coordinate to move plunger up, after discarding the tip.
                 Do not set to 0, as this may cause problem when parking the servo.
         """
-        self.home() # Home the pipettor
-        self.write_wait("M3 S90")   # Making sure servo lever is in the upper position
-        self.readAll()
-        self.write_wait("M5")   # Lowering the servo lever
-        self.readAll()
-        self.write_wait("G0 X"+str(plunger_lower)) # Moving plunger down to discard tip
-        self.readAll()
-        self.write_wait("G0 X"+str(plunger_raise))  # Raising plunger up
-        self.readAll()
-        self.write_wait("M3 S90")   # Raising servo lever
-        self.readAll()
+        self.movePlunger(plunger_raise) # Moving plunger up
+        # Making sure servo lever is in the upper position
+        self.switchModeToNormal()
+        self.switchModeToDropTip()   # Lowering the servo lever
+        self.movePlunger(plunger_lower)
+        self.movePlunger(plunger_raise)
+        self.switchModeToNormal()   # Raising servo lever
+
+    
+    def setPipettorSpeed(self, speed):
+        """
+        Sets pipettor speed
+        """
+        self.sendCmdToPipette("$110="+str(speed), confirm_message="")
+        
+    
+    def switchModeToNormal(self):
+        self.sendCmdToPipette("M3 S90")
+        
+    def switchModeToDropTip(self):
+        self.sendCmdToPipette("M5")
+        
+    def movePlunger(self, level):
+        self.sendCmdToPipette("G0 X"+str(level))
 
 
 # Some functions may involve both mobile and immobile touch probes simultaneously;
@@ -489,8 +626,17 @@ def findWallManyPoints(probe, axis, direction, touch_coord_list,
     return points_list
     
     
-def findCenterOuterTwoProbes(probe1, probe2, axis, raise_height, dist_through_obstruct,
+def findCenterOuterTwoProbes(probe1, probe2, axis, raise_height=None, dist_through_obstruct=None,
                         step_dict=None, step_back_length=3, opposite_side_dist=0, direction=1):
+    # TODO: Remove raise_height and dist_through_obstruct completely, 
+    # for now only left them for possible back compatibility
+    # Assuming probe1 is a mobile probe; and probe2 is a stationary probe
+    # TODO: Add routine to automatically find which probe is which.
+    x_cal, y_cal, z_cal, opposite_x, orthogonal_y, raise_z = probe2.rack.getSimpleCalibrationPoints()
+    if axis == 'x':
+        dist_through_obstruct = opposite_x
+    elif axis == 'y':
+        dist_through_obstruct = orthogonal_y * 2
     # Find first wall
     front_wall = findWall(probe=probe1, 
                      axis=axis, 
@@ -498,11 +644,11 @@ def findCenterOuterTwoProbes(probe1, probe2, axis, raise_height, dist_through_ob
                      step_dict=step_dict, 
                      second_probe=probe2)
     # Raise gantry
-    probe1.robot.move_delta(dz=-raise_height)
+    probe1.robot.move_delta(dz=-raise_z)
     # Move through obstruction
     probe1.robot.moveAxisDelta(axis=axis, value=direction*dist_through_obstruct)
     # Lower gantry back
-    probe1.robot.moveAxisDelta(axis='z', value=raise_height)
+    probe1.robot.moveAxisDelta(axis='z', value=raise_z)
     # Find opposite side of the wall
     rear_wall = findWall(probe=probe1, 
                      axis=axis, 
@@ -519,18 +665,28 @@ class touch_probe():
     Handles behavior of all touch probes, either mobile, or fixed position.
     """
     
+#    step_dict = {
+#                0: {'step_fwd': 12, 'speed_xy_fwd': 5000, 'speed_z_fwd':5000,
+#                    'step_back': 12, 'speed_xy_back': 5000, 'speed_z_back':5000},
+#                1: {'step_fwd': 3, 'speed_xy_fwd': 2000, 'speed_z_fwd':3000,
+#                    'step_back': 6, 'speed_xy_back': 5000, 'speed_z_back':2000},
+#                2: {'step_fwd': 0.75, 'speed_xy_fwd': 200, 'speed_z_fwd':1000,
+#                    'step_back': 1.5, 'speed_xy_back': 500, 'speed_z_back':1000},
+#                3: {'step_fwd': 0.2, 'speed_xy_fwd': 100, 'speed_z_fwd':1000,
+#                    'step_back': 0.4, 'speed_xy_back': 100, 'speed_z_back':1000},
+#                4: {'step_fwd': 0.05, 'speed_xy_fwd': 25, 'speed_z_fwd':1000,
+#                    'step_back': 0.1, 'speed_xy_back': 50, 'speed_z_back':1000},
+#            }
+
     step_dict = {
-                0: {'step_fwd': 12, 'speed_xy_fwd': 5000, 'speed_z_fwd':5000,
-                    'step_back': 12, 'speed_xy_back': 5000, 'speed_z_back':5000},
-                1: {'step_fwd': 3, 'speed_xy_fwd': 2000, 'speed_z_fwd':3000,
-                    'step_back': 6, 'speed_xy_back': 5000, 'speed_z_back':2000},
-                2: {'step_fwd': 0.75, 'speed_xy_fwd': 200, 'speed_z_fwd':1000,
-                    'step_back': 1.5, 'speed_xy_back': 500, 'speed_z_back':1000},
-                3: {'step_fwd': 0.2, 'speed_xy_fwd': 100, 'speed_z_fwd':1000,
-                    'step_back': 0.4, 'speed_xy_back': 100, 'speed_z_back':1000},
-                4: {'step_fwd': 0.05, 'speed_xy_fwd': 25, 'speed_z_fwd':1000,
-                    'step_back': 0.1, 'speed_xy_back': 50, 'speed_z_back':1000},
+                0: {'step_fwd': 3, 'speed_xy_fwd': 1000, 'speed_z_fwd':2000,
+                    'step_back': 3, 'speed_xy_back': 1000, 'speed_z_back':2000},
+                1: {'step_fwd': 0.2, 'speed_xy_fwd': 200, 'speed_z_fwd':1000,
+                    'step_back': 1, 'speed_xy_back': 500, 'speed_z_back':1000},
+                2: {'step_fwd': 0.05, 'speed_xy_fwd': 25, 'speed_z_fwd':500,
+                    'step_back': 0.2, 'speed_xy_back': 50, 'speed_z_back':500},
             }
+
     
     def isTouched(self):
         self.write('d')
@@ -610,7 +766,8 @@ class touch_probe():
 class mobile_touch_probe(mobile_tool, touch_probe):
 
     def __init__(self, robot, com_port_number=None, 
-                 tool_name='mobile_probe', welcome_message='mobile touch probe'):
+                 tool_name='mobile_touch_probe', tool_type=None, rack_name=None, rack_type=None, 
+                 welcome_message='mobile touch probe'):
         self.step_dict = touch_probe.step_dict
         super().__init__(robot, com_port_number=com_port_number, 
                  tool_name=tool_name,
@@ -622,10 +779,10 @@ class mobile_touch_probe(mobile_tool, touch_probe):
         """
         Get touch probe from its saved position and initializes the object
         """
-        cls.tool_name = "mobile_probe"
+        cls.tool_name = "mobile_touch_probe"
         cls.welcome_message="mobile touch probe"
         return super().getTool(robot, 
-            tool_name=cls.tool_name, welcome_message=cls.welcome_message)
+            tool_name="mobile_touch_probe", welcome_message="mobile touch probe")
             
             
 class stationary_touch_probe(tool, touch_probe):
