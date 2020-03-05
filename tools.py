@@ -402,6 +402,12 @@ class pipettor(mobile_tool):
         super().__init__(robot=robot, com_port_number=com_port_number,
             tool_name=tool_name, welcome_message='Servo', rack_type='pipette_rack', rack_name=tool_name+'_rack')
             
+        # Homing pipettor
+        if self.tool_name == 'p20':
+            self.home(pipettor_speed=400)
+        else:
+            self.home(pipettor_speed=1000)        
+            
     @classmethod
     def getTool(cls, robot, tool_name):
         """
@@ -435,11 +441,28 @@ class pipettor(mobile_tool):
                     break
             self.write("?")
 
-    def home(self):
-        self.setPipettorSpeed(400)
+    def home(self, pipettor_speed=400):
+        self.setPipettorSpeed(pipettor_speed)
         self.sendCmdToPipette("$H")
         self.switchModeToNormal()
-        #self.readAll()
+
+
+    def pickUpTip(self, rack, column, row, fine_approach_dz=10, raise_z=0, raise_dz_with_tip=100, fine_approach_speed=500):
+        # Obtaining coordinate of the tip position
+        x, y, z = rack.calcWorkingPosition(column, row, self)
+        # Moving up
+        self.robot.move(z=raise_z)
+        # Moving above tip
+        self.robot.move(x=x, y=y)
+        # Coarse approach
+        fine_approach_z = z - fine_approach_dz
+        self.robot.move(z=fine_approach_z)
+        # Fine approach
+        self.robot.move(z=z, speed_z=fine_approach_speed)
+        # Raise with a tip
+        raise_with_tip_z = z - raise_dz_with_tip
+        self.robot.move(z=raise_with_tip_z)
+
     
     def dropTip(self, plunger_lower=-40, plunger_raise=-2):
         """
