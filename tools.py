@@ -463,6 +463,20 @@ class pipettor(mobile_tool):
         raise_with_tip_z = z - raise_dz_with_tip
         self.robot.move(z=raise_with_tip_z)
 
+
+    def dropOffTipToPosition(self, rack, column, row, raise_z=0, dropoff_dz=20):
+        # Obtaining coordinate of the tip position
+        x, y, z = rack.calcWorkingPosition(column, row, self)
+        # Moving up
+        self.robot.move(z=raise_z)
+        # Moving above dropoff position
+        self.robot.move(x=x, y=y)
+        # Lowering Z to dropoff height
+        z_dropoff = z - dropoff_dz
+        self.robot.move(z=z_dropoff)
+        # Dropping off tip
+        self.dropTip()
+
     
     def dropTip(self, plunger_lower=-40, plunger_raise=-2):
         """
