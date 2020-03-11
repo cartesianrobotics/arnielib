@@ -205,8 +205,12 @@ class racks_test_case(unittest.TestCase):
         # Mock class to provide tool calibration data
         class tool():
             def __init__(self):
+                self.immob_probe_x = 91
+                self.immob_probe_y = 65
+                self.immob_probe_z = 400
+                
                 self.tool_data = {}
-                self.tool_data['pos_stalagmyte'] = [91, 65, 400]
+                #self.tool_data['pos_stalagmyte'] = [91, 65, 400]
         tool = tool()
         
         # not corrected coordinates

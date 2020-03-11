@@ -524,7 +524,7 @@ class pipettor(mobile_tool):
 # Example is calibration of stalagmite against stalaktite; during which
 # both are checked for whether they touch anything.
 
-def approachUntilTouch(robot, touch_function, axis, step, speed_xy=None, speed_z=None):
+def approachUntilTouch(robot, touch_function, axis, step, speed_xy=None, speed_z=None, max_travel_dist=-1):
     """
     Arnie will move along specified "axis" by "step"
         Inputs
@@ -542,6 +542,10 @@ def approachUntilTouch(robot, touch_function, axis, step, speed_xy=None, speed_z
                 distance to move at every step
             speed_xy, speed_z
                 axis moving speed. Using robot defaults at cartesian.py
+            max_travel_dist
+                maximum distance allowed to travel before engaging into 
+                sticky probe recovery. 
+                -1 means no limit. Default is -1
     """
     
     # Getting speed defaults from the robot instance.
@@ -550,10 +554,22 @@ def approachUntilTouch(robot, touch_function, axis, step, speed_xy=None, speed_z
     if speed_z is None:
         speed_z = robot.speed_z
     
+    # Obtaining initial coordinate
+    # This is needed for probe unstucking protocol.
+    starting_coord = robot.getAxisPosition(axis)
+    
     dC = robot.axisToCoordinates(axis, step)
     
     while touch_function():
         robot.move_delta(dx=dC[0], dy=dC[1], dz=dC[2], speed_xy=speed_xy, speed_z=speed_z)
+        # Checking to make sure robot did not go beyond maximum allowed travel distance
+        current_coord = robot.getAxisPosition(axis)
+        travelled_dist = abs(starting_coord - current_coord)
+        if max_travel_dist >= 0 and travelled_dist > max_travel_dist:
+            # Moving back to initial position, at which touch probe was physically touching something
+            # It hopefully will unstuck
+            robot.moveAxis(axis, starting_coord)
+        
     
     return robot.getAxisPosition(axis)
 
@@ -619,12 +635,20 @@ def findWall(probe, axis, direction, second_probe=None, step_dict=None, step_bac
             retract_touch_function = probe.isTouched
             forward_touch_function = probe.isNotTouched
         
+        # Determining max travel distance for retraction
+        # To fix probe sticktion
+        if key == 0:
+            max_travel_dist = current_step_dict['step_back'] * 2
+        else:
+            max_travel_dist = step_dict[key-1]['step_back'] * 2
+        
         # Going backwards until touch probe no longer touches anything
         approachUntilTouch(robot=probe.robot, touch_function=retract_touch_function,
             axis=axis,
             step=(-direction * current_step_dict['step_back']),
             speed_xy=current_step_dict['speed_xy_back'], 
-            speed_z=current_step_dict['speed_z_back'])
+            speed_z=current_step_dict['speed_z_back'],
+            max_travel_dist=max_travel_dist)
         
         # Going forward until hitting the wall
         coord = approachUntilTouch(robot=probe.robot, touch_function=forward_touch_function,
