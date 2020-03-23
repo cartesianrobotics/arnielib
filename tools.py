@@ -8,6 +8,7 @@ import re
 import cartesian as cart    # TODO: Remove it when finishing refactoring.
 import json
 import configparser
+import time
 
 # Internal arnielib modules
 import low_level_comm as llc
@@ -96,6 +97,37 @@ class tool(llc.serial_device):
         # after which obtained Z coordinate will be used for the other operations.
         self.delta_length_for_calibration = float(config['calibration']['delta_length_for_calibration'])
         
+        # When calibrating the tool, those values will be used to shift it against the 
+        # center of the immobile touch probe.
+#        try:
+#            self.deltaX_for_calibration = float(config['calibration']['deltaX_for_calibration'])
+#        except:
+#            self.deltaX_for_calibration = 0
+#        try:
+#            self.deltaY_for_calibration = float(config['calibration']['deltaY_for_calibration'])
+#        except:
+#            self.deltaY_for_calibration = 0
+#        # Geometry of a tool at the calibration point
+#        try:
+#            self.sizeX = float(config['geometry']['sizeX'])
+#            self.sizeY = float(config['geometry']['sizeY'])
+#        except:
+#            self.sizeX = 0
+#            self.sizeY = 0
+#        # Parameters to adjust robot travel when robot moves from frontal side calibration to 
+#        # rear side. 
+#        # To be added to opposite_x or orthogonal_y (provided by an immobile touch probe rack object) 
+#        # when calculating calibration parameters
+#        try:
+#            self.oppositeX_adjust = float(config['calibration']['oppositeX'])
+#        except:
+#            self.oppositeX_adjust = 0
+#        try:
+#            self.orthogonalY_adjust = float(config['calibration']['oppositeY'])
+#        except:
+#            self.orthogonalY_adjust = 0
+        
+
         if tool_name is not None:
             self.tool_name = tool_name
             self.tool_data['name'] = tool_name
@@ -406,7 +438,7 @@ class pipettor(mobile_tool):
         if self.tool_name == 'p20':
             self.home(pipettor_speed=400)
         else:
-            self.home(pipettor_speed=1000)        
+            self.home(pipettor_speed=750)        
             
     @classmethod
     def getTool(cls, robot, tool_name):
@@ -861,8 +893,40 @@ class stationary_touch_probe(tool, touch_probe):
     
     
 class mobile_gripper(mobile_tool):
-    def operate_gripper(self, level):
-        self.write(str(level))
+
+
+    def __init__(self, robot, com_port_number=None, 
+                 tool_name='mobile_gripper', tool_type=None, rack_name=None, rack_type='mobile_gripper_rack', 
+                 welcome_message='mobile gripper'):
+        super().__init__(robot, com_port_number=com_port_number, 
+                 tool_name=tool_name,
+                 welcome_message=welcome_message)
+        self.eol = ''
+
+    @classmethod
+    def getTool(cls, robot):
+        """
+        Get touch probe from its saved position and initializes the object
+        """
+        cls.tool_name = "mobile_gripper"
+        cls.welcome_message="mobile gripper"
+        return super().getTool(robot, 
+            tool_name="mobile_gripper", welcome_message="mobile gripper", rack_type='mobile_gripper_rack')
+
+    def powerUp(self):
+        self.writeAndWait("P on", confirm_message='\r\n')
+        
+    def powerDown(self):
+        self.writeAndWait("P off", confirm_message='\r\n')
+        
+    def moveServo(self, angle):
+        self.writeAndWait("G0 "+str(angle), confirm_message='\r\n')
+        
+    def operateGripper(self, angle):
+        self.powerUp()
+        self.moveServo(angle)
+        time.sleep(1.5)
+        self.powerDown()
 
 
 

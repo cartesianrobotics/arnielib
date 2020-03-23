@@ -436,6 +436,12 @@ class arnie(llc.serial_device):
         
         self.move(z=z_init)
         
+        # After liting a tool, closing the jaws again, to make grip stronger, and to fix 
+        # possible non-ideal pickup.
+        # Added 3/19/2020, after getting tired with precise calibration of pickup height.
+        self.closeTool()
+        self.closeTool()
+        
         return device
         
     
