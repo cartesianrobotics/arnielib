@@ -372,6 +372,96 @@ def calibrateTool(tool, stationary_probe):
     
     return center_x, center_y, z    
     
+
+def calibrateToolCustomPoints(tool, stationary_probe):
+    """
+    Calibrates a tool (docked to the gantry) against a stationary touch probe.
+    This function uses custom calibration points provided within tool object;
+    which in order are acquired from the tool settings file.
+    The points are provided arbitrarily to the stationary probe center; the 
+    latter one is obtained from the stationary_probe object.
+    """
+    
+    # Unpacking robot object (for convenience)
+    ar = tool.robot
+    
+    # Obtaining center of the stationary probe
+    # Calibration points will be calculated relative to those coordinates.
+    stp_x, stp_y, stp_z = stationary_probe.rack.getCalibratedRackCenter()
+
+    # There are 4 points of calibration: X frontal, X rear, Y frontal, Y rear.
+    # Each has 3 coordinates: x, y, z.
+    # Thus, tool object must provide 3 coordinates for all of those, total 12 coordinates.
+    # When calibrating X coordinate, x_Xfrontal = x_Xrear = x_X; z_Xfrontal = z_Xrear = z_X
+    # Same for Y: y_Yfrontal = y_Yrear = y_Y; z_Yfrontal = z_Yrear = z_Y
+    # However z_X may not be equal to z_Y
+    
+    # Unpacking parameters for X calibration
+    x_Xfrontal = tool.immobile_probe_calibration_points['x_Xfrontal']
+    x_Xrear = tool.immobile_probe_calibration_points['x_Xrear']
+    y_X = tool.immobile_probe_calibration_points['y_X']
+    z_X = tool.immobile_probe_calibration_points['z_X']
+    
+    # Unpacking parameters for Y calibration
+    x_Y = tool.immobile_probe_calibration_points['x_Y']
+    y_Yfrontal = tool.immobile_probe_calibration_points['y_Yfrontal']
+    y_Yrear = tool.immobile_probe_calibration_points['y_Yrear']
+    z_Y = tool.immobile_probe_calibration_points['z_Y']
+    
+    # Acquiring and calculating Z coordinate height
+    # Accounting for the fact that tools are of different length than a mobile touch probe
+    # (which is considered standard)
+    tool_longer_than_mobile_probe_by = tool.delta_length_for_calibration
+    # Height to rize the tool above X calibration level
+    raise_z = tool.immobile_probe_calibration_points['raise_z']
+    
+    # Calculating absolute calibration values
+    x_Xfrontal = x_Xfrontal + stp_x
+    x_Xrear = x_Xrear + stp_x
+    y_X = y_X + stp_y
+    z_X = z_X + stp_z - tool_longer_than_mobile_probe_by
+    
+    x_Y = x_Y + stp_x
+    y_Yfrontal = y_Yfrontal + stp_y
+    y_Yrear = y_Yrear + stp_y
+    z_Y = z_Y + stp_z - tool_longer_than_mobile_probe_by
+    
+    # Moving to the initial calibration point
+    ar.move(x=x_Xfrontal, y=y_X, z=z_X, z_first=False)
+    
+    # Finding center by X
+    opposite_x = x_Xrear - x_Xfrontal
+    center_x = stationary_probe.findCenterOuter(axis='x', raise_height=raise_z, 
+        dist_through_obstruct=opposite_x)
+        
+    # Moving towards Y calibration
+    # Up
+    ar.moveAxisDelta(axis='z', value=-raise_z)
+    # To XY position for Y calibration
+    ar.move(x=x_Y, y=y_Yfrontal)
+    # Down
+    ar.moveAxisDelta(axis='z', value=raise_z)
+
+    # Finding center by Y
+    dist_through_obstruct = y_Yrear - y_Yfrontal
+    center_y = stationary_probe.findCenterOuter(axis='y', raise_height=raise_z,
+        dist_through_obstruct=dist_through_obstruct)
+    
+    # Moving towards Z calibration
+    # Up
+    ar.moveAxisDelta(axis='z', value=-raise_z)
+    # To Z calibration point using recently discovered coordinates of the center of the rack.
+    ar.move(x=center_x, y=center_y)
+    
+    # Finding Z height
+    z = stationary_probe.findWall(axis='z', direction=1)
+
+    # Saving calibration points for mobile_probe, as they will be used for further objects calibrations
+    tool.setStalagmyteCoord(center_x, center_y, z)
+    
+    return center_x, center_y, z 
+    
+    
     
 def calibrateStationaryProbe(mobile_probe, stationary_probe):
     """

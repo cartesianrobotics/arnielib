@@ -97,6 +97,38 @@ class tool(llc.serial_device):
         # after which obtained Z coordinate will be used for the other operations.
         self.delta_length_for_calibration = float(config['calibration']['delta_length_for_calibration'])
         
+        # The following values are used when calibrating the tool against immobile touch probe
+        # They are loaded from the tool config file.
+        # As of 3/25/2020, they are only used in calibration.calibrateToolCustomPoints
+        
+        # All data are stored in this dictionary:
+        self.immobile_probe_calibration_points = {}
+        
+        # TODO: consider moving those settings to the mobile_gripper child class
+        # as some tools will not be using those settings.
+        try:
+            self.immobile_probe_calibration_points['x_Xfrontal'] = float(
+                    config['calibration']['x_position_for_X_axis_calibration_frontal'])
+            self.immobile_probe_calibration_points['x_Xrear'] = float(
+                    config['calibration']['x_position_for_X_axis_calibration_rear'])
+            self.immobile_probe_calibration_points['y_X'] = float(
+                    config['calibration']['y_position_for_X_axis_calibration'])
+            self.immobile_probe_calibration_points['z_X'] = float(
+                    config['calibration']['z_position_for_X_axis_calibration'])
+            self.immobile_probe_calibration_points['x_Y'] = float(
+                    config['calibration']['x_position_for_Y_axis_calibration'])
+            self.immobile_probe_calibration_points['y_Yfrontal'] = float(
+                    config['calibration']['y_position_for_Y_axis_calibration_frontal'])
+            self.immobile_probe_calibration_points['y_Yrear'] = float(
+                    config['calibration']['y_position_for_Y_axis_calibration_rear'])
+            self.immobile_probe_calibration_points['z_Y'] = float(
+                    config['calibration']['z_position_for_Y_axis_calibration'])
+            self.immobile_probe_calibration_points['raise_z'] = float(
+                    config['calibration']['raise_z_to_move_over_the_probe'])
+        except:
+            pass
+        
+        
         # When calibrating the tool, those values will be used to shift it against the 
         # center of the immobile touch probe.
 #        try:
