@@ -73,6 +73,8 @@ class rack():
             # Parameters to calibrate Z axis of a rack.
             # In case they are not provided in the config file, Z axis will be 
             # calibrated at the center of the rack.
+            
+            # TODO: Change Z according to X and Y
             try:
                 self.z_calibration_dxdy_coord = [
                     float(config['calibration']['z_calibration_dx_coord']), 
@@ -84,7 +86,22 @@ class rack():
                 self.z_calibration_dz = float(config['calibration']['z_calibration_dz'])
             except:
                 self.z_calibration_dz = 0
-            
+            try:
+                self.x_calibration_dxdy_coord = [
+                    float(config['calibration']['x_calibration_dx_coord']), 
+                    float(config['calibration']['x_calibration_dy_coord']),
+                    float(config['calibration']['x_calibration_dz_coord']),
+                    ]
+            except:
+                self.x_calibration_dxdy_coord = [0, 0, 0]
+            try:
+                self.y_calibration_dxdy_coord = [
+                    float(config['calibration']['y_calibration_dx_coord']), 
+                    float(config['calibration']['y_calibration_dy_coord']),
+                    float(config['calibration']['y_calibration_dz_coord']),
+                    ]
+            except:
+                self.y_calibration_dxdy_coord = [0, 0, 0]    
             
             
             self.columns = int(config['wells']['columns'])
@@ -169,6 +186,26 @@ class rack():
         dZ should be added to self.max_height
         """
         return self.z_calibration_dxdy_coord[0], self.z_calibration_dxdy_coord[1], self.z_calibration_dz
+    
+    
+    def getRelativeCalibrationPoint(self, axis):
+        """
+        Provides dX, dY, dZ for a given axis to use in rack calibration.
+        Input:
+            axis    
+                Axis for which to provide relative calibration points
+        Returns:
+            (dx, dy, dz)
+                Delta for coordinates to be used during calibration
+        """
+        
+        axis = axis.lower()
+        if axis == 'x':
+            return self.x_calibration_dxdy_coord
+        elif axis == 'y':
+            return self.y_calibration_dxdy_coord
+        elif axis == 'z':
+            return self.getRelativeZCalibrationPoint()
     
     
     def calcWellsPositions(self):

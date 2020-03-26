@@ -239,8 +239,8 @@ def findXYCenterOuterMultiPoint(probe,
     return x_center, y_center
 
 
-
-def calibrateRack(probe, rack):
+# TODO: deltas to settings file
+def calibrateRack(probe, rack, x_calibration_deltaY=0, y_calibration_deltaX=0):
     """
     Calibrates square shaped object from outside.
     Finds X, Y and Z.
@@ -251,10 +251,22 @@ def calibrateRack(probe, rack):
     
     # Obtaining calibration parameters:
     x_cal, y_cal, z_cal, opposite_x, orthogonal_y, raise_z = rack.getSimpleCalibrationPoints()
-    calibr_Z_dX, calibr_Z_dY, calibr_Z_dZ = rack.getRelativeZCalibrationPoint()
+    #calibr_Z_dX, calibr_Z_dY, calibr_Z_dZ = rack.getRelativeZCalibrationPoint()
+    
+    x_calibration_dxdydz = rack.getRelativeCalibrationPoint('x')
+    y_calibration_dxdydz = rack.getRelativeCalibrationPoint('y')
+    z_calibration_dxdydz = rack.getRelativeCalibrationPoint('z')
+    
+    if x_calibration_deltaY == 0:
+        x_calibration_deltaY = x_calibration_dxdydz[1]
+    if y_calibration_deltaX == 0:
+        y_calibration_deltaX = y_calibration_dxdydz[0]
+    calibr_Z_dX = z_calibration_dxdydz[0]
+    calibr_Z_dY = z_calibration_dxdydz[1]
+    calibr_Z_dZ = z_calibration_dxdydz[2] # TODO: make Z same as X and Y
     
     # Moving to the initial calibration point
-    ar.move(x=x_cal, y=y_cal, z=z_cal, z_first=False)
+    ar.move(x=x_cal, y=y_cal+x_calibration_deltaY, z=z_cal, z_first=False)
     
     # Finding center by X
     center_x = probe.findCenterOuter(axis='x', raise_height=raise_z, 
@@ -264,7 +276,7 @@ def calibrateRack(probe, rack):
     # Up
     ar.moveAxisDelta(axis='z', value=-raise_z)
     # To XY position for Y calibration
-    ar.move(x=center_x, y=y_cal-orthogonal_y)
+    ar.move(x=center_x+y_calibration_deltaX, y=y_cal-orthogonal_y)
     # Down
     ar.moveAxisDelta(axis='z', value=raise_z)
     
