@@ -468,7 +468,7 @@ class pipettor(mobile_tool):
             
         # Homing pipettor
         if self.tool_name == 'p20':
-            self.home(pipettor_speed=400)
+            self.home(pipettor_speed=300)
         else:
             self.home(pipettor_speed=750)        
             
@@ -507,6 +507,8 @@ class pipettor(mobile_tool):
 
     def home(self, pipettor_speed=400):
         self.setPipettorSpeed(pipettor_speed)
+        self.sendCmdToPipette("$X")
+        self.movePlunger(-10)
         self.sendCmdToPipette("$H")
         self.switchModeToNormal()
 

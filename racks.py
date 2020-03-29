@@ -31,6 +31,11 @@ class rack():
         # slot_z might be = to rack_z; but that is individual
         self.rack_data = rack_data
         
+        # Dictionary storing sample objects
+        # {sample_object: (x_n, y_n)}
+        # x_n, y_n - position (well) in the rack
+        self.samples_dict = {}
+        
         # Attempting to read data from HD
         if self.rack_data is None:
             self.rack_data = self.openFileWithRackParameters(rack_name+'.json')
