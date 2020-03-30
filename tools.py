@@ -88,14 +88,14 @@ class tool(llc.serial_device):
         # such as tool rack geometry and pickup instructions.
         # Tool only has information which relates to the tool itself, 
         # such as tool geometry.
-        config = configparser.ConfigParser()
+        self.config = configparser.ConfigParser()
         config_path = 'configs/' + tool_type + '.ini'
-        config.read(config_path)
+        self.config.read(config_path)
         
         # How much longer the tool is compared to the mobile touch probe.
         # This setting to be used only for calibration purposes, 
         # after which obtained Z coordinate will be used for the other operations.
-        self.delta_length_for_calibration = float(config['calibration']['delta_length_for_calibration'])
+        self.delta_length_for_calibration = float(self.config['calibration']['delta_length_for_calibration'])
         
         # The following values are used when calibrating the tool against immobile touch probe
         # They are loaded from the tool config file.
@@ -108,56 +108,25 @@ class tool(llc.serial_device):
         # as some tools will not be using those settings.
         try:
             self.immobile_probe_calibration_points['x_Xfrontal'] = float(
-                    config['calibration']['x_position_for_X_axis_calibration_frontal'])
+                    self.config['calibration']['x_position_for_X_axis_calibration_frontal'])
             self.immobile_probe_calibration_points['x_Xrear'] = float(
-                    config['calibration']['x_position_for_X_axis_calibration_rear'])
+                    self.config['calibration']['x_position_for_X_axis_calibration_rear'])
             self.immobile_probe_calibration_points['y_X'] = float(
-                    config['calibration']['y_position_for_X_axis_calibration'])
+                    self.config['calibration']['y_position_for_X_axis_calibration'])
             self.immobile_probe_calibration_points['z_X'] = float(
-                    config['calibration']['z_position_for_X_axis_calibration'])
+                    self.config['calibration']['z_position_for_X_axis_calibration'])
             self.immobile_probe_calibration_points['x_Y'] = float(
-                    config['calibration']['x_position_for_Y_axis_calibration'])
+                    self.config['calibration']['x_position_for_Y_axis_calibration'])
             self.immobile_probe_calibration_points['y_Yfrontal'] = float(
-                    config['calibration']['y_position_for_Y_axis_calibration_frontal'])
+                    self.config['calibration']['y_position_for_Y_axis_calibration_frontal'])
             self.immobile_probe_calibration_points['y_Yrear'] = float(
-                    config['calibration']['y_position_for_Y_axis_calibration_rear'])
+                    self.config['calibration']['y_position_for_Y_axis_calibration_rear'])
             self.immobile_probe_calibration_points['z_Y'] = float(
-                    config['calibration']['z_position_for_Y_axis_calibration'])
+                    self.config['calibration']['z_position_for_Y_axis_calibration'])
             self.immobile_probe_calibration_points['raise_z'] = float(
-                    config['calibration']['raise_z_to_move_over_the_probe'])
+                    self.config['calibration']['raise_z_to_move_over_the_probe'])
         except:
             pass
-        
-        
-        # When calibrating the tool, those values will be used to shift it against the 
-        # center of the immobile touch probe.
-#        try:
-#            self.deltaX_for_calibration = float(config['calibration']['deltaX_for_calibration'])
-#        except:
-#            self.deltaX_for_calibration = 0
-#        try:
-#            self.deltaY_for_calibration = float(config['calibration']['deltaY_for_calibration'])
-#        except:
-#            self.deltaY_for_calibration = 0
-#        # Geometry of a tool at the calibration point
-#        try:
-#            self.sizeX = float(config['geometry']['sizeX'])
-#            self.sizeY = float(config['geometry']['sizeY'])
-#        except:
-#            self.sizeX = 0
-#            self.sizeY = 0
-#        # Parameters to adjust robot travel when robot moves from frontal side calibration to 
-#        # rear side. 
-#        # To be added to opposite_x or orthogonal_y (provided by an immobile touch probe rack object) 
-#        # when calculating calibration parameters
-#        try:
-#            self.oppositeX_adjust = float(config['calibration']['oppositeX'])
-#        except:
-#            self.oppositeX_adjust = 0
-#        try:
-#            self.orthogonalY_adjust = float(config['calibration']['oppositeY'])
-#        except:
-#            self.orthogonalY_adjust = 0
         
 
         if tool_name is not None:
@@ -418,6 +387,10 @@ class mobile_tool(tool):
         return [x, y, z]
 
 
+    def getHowMuchLongerIsTheToolRelativeToTouchProbe(self):
+        return self.delta_length_for_calibration
+
+
     def returnTool(self):
         """
         Returns tool to its place.
@@ -461,11 +434,20 @@ class mobile_tool(tool):
 
 class pipettor(mobile_tool):
 
-    def __init__ (self, robot, tool_name, rack_name=None, rack_type=None, tool_type=None, com_port_number=None, 
-            welcome_message=None):
+    def __init__ (self, robot, tool_name, 
+                  rack_name=None, rack_type=None, 
+                  tool_type=None, com_port_number=None, 
+                  welcome_message=None):
         super().__init__(robot=robot, com_port_number=com_port_number,
-            tool_name=tool_name, welcome_message='Servo', rack_type='pipette_rack', rack_name=tool_name+'_rack')
-            
+                         tool_name=tool_name, welcome_message='Servo', 
+                         rack_type='pipette_rack', rack_name=tool_name+'_rack')
+        
+        # Loading parameters specific to pipettors from config file
+        self.tip_added_z_length = float(self.config['geometry']['tip_added_length'])
+        
+        # Switch indicating whether tip is attached or not.
+        self.tip_attached = False
+        
         # Homing pipettor
         if self.tool_name == 'p20':
             self.home(pipettor_speed=300)
@@ -525,12 +507,13 @@ class pipettor(mobile_tool):
         self.robot.move(z=fine_approach_z)
         # Fine approach
         self.robot.move(z=z, speed_z=fine_approach_speed)
+        self.tip_attached = True
         # Raise with a tip
         raise_with_tip_z = z - raise_dz_with_tip
         self.robot.move(z=raise_with_tip_z)
 
 
-    def dropOffTipToPosition(self, rack, column, row, raise_z=0, dropoff_dz=20):
+    def dropOffTipToPosition(self, rack, column, row, raise_z=0, dropoff_dz=5):
         # Obtaining coordinate of the tip position
         x, y, z = rack.calcWorkingPosition(column, row, self)
         # Moving up
@@ -564,6 +547,7 @@ class pipettor(mobile_tool):
         self.switchModeToNormal()
         self.switchModeToDropTip()   # Lowering the servo lever
         self.movePlunger(plunger_lower)
+        self.tip_attached = False
         self.movePlunger(plunger_raise)
         self.switchModeToNormal()   # Raising servo lever
 
@@ -583,6 +567,13 @@ class pipettor(mobile_tool):
         
     def movePlunger(self, level):
         self.sendCmdToPipette("G0 X"+str(level))
+
+    def getHowMuchLongerIsTheToolRelativeToTouchProbe(self):
+        if self.tip_attached:
+            return self.delta_length_for_calibration + self.tip_added_z_length
+        else:
+            return self.delta_length_for_calibration
+
 
 
 # Some functions may involve both mobile and immobile touch probes simultaneously;

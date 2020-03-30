@@ -349,7 +349,7 @@ def calibrateTool(tool, stationary_probe):
     x_cal, y_cal, z_cal, opposite_x, orthogonal_y, raise_z = stationary_probe.rack.getSimpleCalibrationPoints()
     # Accounting for the fact that tools are of different length than a mobile touch probe
     # (which is considered standard)
-    tool_longer_than_mobile_probe_by = tool.delta_length_for_calibration
+    tool_longer_than_mobile_probe_by = tool.getHowMuchLongerIsTheToolRelativeToTouchProbe()
     z_cal = z_cal - tool_longer_than_mobile_probe_by
     
     # Moving to the initial calibration point
@@ -423,7 +423,7 @@ def calibrateToolCustomPoints(tool, stationary_probe):
     # Acquiring and calculating Z coordinate height
     # Accounting for the fact that tools are of different length than a mobile touch probe
     # (which is considered standard)
-    tool_longer_than_mobile_probe_by = tool.delta_length_for_calibration
+    tool_longer_than_mobile_probe_by = tool.getHowMuchLongerIsTheToolRelativeToTouchProbe()
     # Height to rize the tool above X calibration level
     raise_z = tool.immobile_probe_calibration_points['raise_z']
     
