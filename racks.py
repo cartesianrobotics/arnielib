@@ -259,9 +259,7 @@ class rack():
             
         if use_stalagmyte:
             try:
-                tool_stal_x = tool.immob_probe_x
-                tool_stal_y = tool.immob_probe_y
-                tool_stal_z = tool.immob_probe_z
+                tool_stal_x, tool_stal_y, tool_stal_z = tool.getStalagmyteCoord()
             except:
                 [tool_stal_x, tool_stal_y, tool_stal_z] =  self.rack_data['pos_stalagmyte']
             

@@ -513,7 +513,7 @@ class pipettor(mobile_tool):
         self.robot.move(z=raise_with_tip_z)
 
 
-    def dropOffTipToPosition(self, rack, column, row, raise_z=0, dropoff_dz=5):
+    def dropOffTipToPosition(self, rack, column, row, raise_z=0, dropoff_dz=10):
         # Obtaining coordinate of the tip position
         x, y, z = rack.calcWorkingPosition(column, row, self)
         # Moving up
@@ -574,6 +574,15 @@ class pipettor(mobile_tool):
         else:
             return self.delta_length_for_calibration
 
+    def getStalagmyteCoord(self):
+        """
+        Returns #stalagmyte (or #immobile_touch_probe) coordinates, that are 
+        saved in the object after calibration
+        """
+        if self.tip_attached:
+            return self.immob_probe_x, self.immob_probe_y, self.immob_probe_z - self.tip_added_z_length
+        else:
+            return self.immob_probe_x, self.immob_probe_y, self.immob_probe_z
 
 
 # Some functions may involve both mobile and immobile touch probes simultaneously;
