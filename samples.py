@@ -117,6 +117,26 @@ class sample():
         return z
         
 
+    def samplePercentToZ(self, fraction, tool):
+        """
+        Calculate Z at which the end of the tool will be, corresponding
+        to percent of sample height
+        """
+        rack = self.sample_data['rack']
+        x, y, z_rack = rack.calcWorkingPosition(self.sample_data['x_well'],
+                                                self.sample_data['y_well'],
+                                                tool)
+        sample_top_dz = self.params['sample_top_dz'][rack.rack_data['type']]
+        # Absolute Z coordinate of the top of the sample
+        z_sample_0 = z_rack - sample_top_dz
+        # Dictionary that stores dependence of volume vs height
+        # Ultimately provided in settings file
+        vol_vs_z_dict = self.params['volume_vs_z']
+        lowest_Z = vol_vs_z_dict["0"]
+        z_tube_insert = lowest_Z * fraction
+        z = z_sample_0 + z_tube_insert
+        return z
+
 
     def getSampleCenterXY(self, tool):
         rack = self.sample_data['rack']
