@@ -568,6 +568,30 @@ class pipettor(mobile_tool):
     def movePlunger(self, level):
         self.sendCmdToPipette("G0 X"+str(level))
 
+
+    def movePlungerToVol(self, volume):
+        """
+        Moves plunger according to the desired volume position.
+        """
+        # Calculating plunger position from desired volume
+        # k - slope, b - intercept
+        k = self.tool_data['volume_to_position_slope']
+        b = self.tool_data['volume_to_position_intercept']
+        position = volume * k + b
+        # Minus is because movement scale is currently from 0 (close to home) to -40
+        # farthest from home. The model calibration was done using positive values
+        # TODO: add minus to the calibration raw data; remove this minus.
+        self.movePlunger(-position)
+
+    def setPlungerToVolConstants(self, slope, intercept):
+        """
+        Specifies constants for function to recalculate volume to plunger position
+        """
+        self.tool_data['volume_to_position_slope'] = slope
+        self.tool_data['volume_to_position_intercept'] = intercept
+        # Saving slope and intercept parameters
+        self.save()
+
     def getHowMuchLongerIsTheToolRelativeToTouchProbe(self):
         if self.tip_attached:
             return self.delta_length_for_calibration + self.tip_added_z_length
