@@ -581,7 +581,7 @@ class pipettor(mobile_tool):
         # Minus is because movement scale is currently from 0 (close to home) to -40
         # farthest from home. The model calibration was done using positive values
         # TODO: add minus to the calibration raw data; remove this minus.
-        self.movePlunger(-position)
+        self.movePlunger(position)
 
     def setPlungerToVolConstants(self, slope, intercept):
         """
@@ -591,6 +591,70 @@ class pipettor(mobile_tool):
         self.tool_data['volume_to_position_intercept'] = intercept
         # Saving slope and intercept parameters
         self.save()
+
+    
+    def uptakeLiquid(self, sample, volume, uptake_delay=0, immerse_volume=None, tip_ignore=False):
+        """
+        Uptakes specified volume of liquid from the sample.
+        Inputs:
+            sample
+                object of class sample. This function will try to read all necessary settings
+                from that object
+            volume
+                Volume that you want to uptake, mL
+            
+        """
+        # Checking whether the pipettor has a tip.
+        # Will stop function if tip is not attached 
+        if (not self.tip_attached) and tip_ignore:
+            print("ERROR: pipette tip was not attached.")
+            return
+        # Current Z position
+        z = self.getAxisPosition(axis='z')
+        # Z coordinate of the top of the sample
+        z_sample_top = sample.getSampleTopZ(self)
+        # Safe Z coordinate to approach.
+        z_safe = z_sample_top - 10
+        # If the end of the tool is lower than safe Z coordinate, raise Z gantry
+        # Higher z value, lower the gantry is.
+        if z > z_safe:
+            self.robot.move(z=z_safe)
+        # Moving to the sample position
+        x, y = sample.getSampleCenterXY(self)
+        self.robot.move(x=x, y=y)
+        
+        # Moving plunger down
+        self.movePlungerToVol(volume)
+        
+        # Checking whether custom immerse depth is provided; if not, 
+        # immerse depth will be calculated from volume that will be left in the sample
+        # after finishing pipetting.
+        # TODO: add also percent and relative depth
+        if immerse_volume is None:
+            curr_sample_vol = sample.getVolume()
+            resulting_volume = curr_sample_vol - volume
+            # You must immerse tool deeper than just resulting volume,
+            # to prevent uptaking bubbles.
+            # Robot will calculate extra immerse from the maximum sample volume
+            max_vol = sample.getMaxVolume()
+            immerse_vol_fraction = max_vol * 0.1
+            immerse_volume = resulting_volume - immerse_vol_fraction
+            # It may be that the sample has just enough liquid to pipette.
+            # In this case robot is lowering itself right to the bottom.
+            if immerse_volume < 0:
+                immerse_volume = 0
+        # Actually immersing the tool into the tube
+        z_immerse = sample.sampleVolToZ(volume=immerse_volume, tool=self)
+        self.robot.move(z=z_immerse)
+        
+        # Now (finally) uptaking the liquid
+        self.movePlungerToVol(0)
+        time.sleep(uptake_delay)
+        
+        # Moving robot from the tube
+        self.robot.move(z=z_safe)
+            
+        
 
     def getHowMuchLongerIsTheToolRelativeToTouchProbe(self):
         if self.tip_attached:

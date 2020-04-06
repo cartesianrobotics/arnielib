@@ -145,3 +145,39 @@ class sample():
                                            tool)
         return x, y
         
+        
+    def getSampleTopZ(self, tool):
+        """
+        Returns absolute coordinate of the top of the sample
+        """
+        rack = self.sample_data['rack']
+        x, y, z_rack = rack.calcWorkingPosition(self.sample_data['x_well'],
+                                                self.sample_data['y_well'],
+                                                tool)
+        sample_top_dz = self.params['sample_top_dz'][rack.rack_data['type']]
+        # Absolute Z coordinate of the top of the sample
+        z_sample_0 = z_rack - sample_top_dz
+        return z_sample_0
+        
+    def setVolume(self, volume):
+        """
+        Specifies volume of liquid in the sample
+        """
+        self.volume = volume
+        
+    def getVolume(self):
+        """
+        Returns volume of liquid currently in the sample
+        """
+        return self.volume
+        
+    def getMaxVolume(self):
+        """
+        Returns max volume that the sample may theoretically have
+        Obtains this data from volume vs z dictionary, that is provided in 
+        config json file samplename_params.json
+        """
+        vol_vs_z_dict = self.param['volume_vs_z']
+        vols_list = [float(x) for x in vol_vs_z_dict.keys()]
+        max_vol = max(vols_list)
+        return max_vol
