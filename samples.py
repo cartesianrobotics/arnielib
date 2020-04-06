@@ -177,7 +177,7 @@ class sample():
         Obtains this data from volume vs z dictionary, that is provided in 
         config json file samplename_params.json
         """
-        vol_vs_z_dict = self.param['volume_vs_z']
+        vol_vs_z_dict = self.params['volume_vs_z']
         vols_list = [float(x) for x in vol_vs_z_dict.keys()]
         max_vol = max(vols_list)
         return max_vol

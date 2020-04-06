@@ -606,11 +606,11 @@ class pipettor(mobile_tool):
         """
         # Checking whether the pipettor has a tip.
         # Will stop function if tip is not attached 
-        if (not self.tip_attached) and tip_ignore:
+        if (not self.tip_attached) and (not tip_ignore):
             print("ERROR: pipette tip was not attached.")
             return
         # Current Z position
-        z = self.getAxisPosition(axis='z')
+        z = self.robot.getAxisPosition(axis='z')
         # Z coordinate of the top of the sample
         z_sample_top = sample.getSampleTopZ(self)
         # Safe Z coordinate to approach.
