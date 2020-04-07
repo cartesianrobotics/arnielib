@@ -601,7 +601,20 @@ class pipettor(mobile_tool):
                 object of class sample. This function will try to read all necessary settings
                 from that object
             volume
-                Volume that you want to uptake, mL
+                Volume that you want to uptake. All volume values are in microliters.
+            uptake_delay
+                At the end of uptake, robot will wait specified number of seconds.
+                This is useful when the liquid is viscous, and needs time to get into a tip
+                Default is 0.
+            immerse_volume
+                Robot will immerse the tip to the specified volume mark. 
+                If not specified, the robot will immerse the tip just below the current 
+                liquid level in the sample; obtained from sample current volume and 
+                height vs. volume dependence of the sample.
+            tip_ignore
+                Normally, function checks on whether the tip is attached to the pipettor, 
+                and will only proceed if attached. If this parameter is specified as True,
+                this check will be omitted.
             
         """
         # Checking whether the pipettor has a tip.
@@ -651,10 +664,62 @@ class pipettor(mobile_tool):
         self.movePlungerToVol(0)
         time.sleep(uptake_delay)
         
+        # Updating sample volume
+        old_sample_vol = sample.getVolume()
+        new_sample_vol = old_sample_vol - volume
+        sample.setVolume(new_sample_vol)
+        
         # Moving robot from the tube
         self.robot.move(z=z_safe)
-            
         
+            
+    
+    def dispenseLiquid(self, sample, volume, release_delay=0, immerse_volume=None, plunger_retract=True):
+        """
+        Dispenses liquid from pipettor tip into specified sample
+        """
+        # Making sure the robot will not crash into destination tube
+        # This will not prevent from crashing at anything in between, 
+        # it is up to a user to prevent this.
+        # Current Z position
+        z = self.robot.getAxisPosition(axis='z')
+        # Z coordinate of the top of the sample
+        z_sample_top = sample.getSampleTopZ(self)
+        # Safe Z coordinate to approach.
+        z_safe = z_sample_top - 10
+        # If the end of the tool is lower than safe Z coordinate, raise Z gantry
+        # Higher z value, lower the gantry is.
+        if z > z_safe:
+            self.robot.move(z=z_safe)
+        # Moving to the sample position
+        x, y = sample.getSampleCenterXY(self)
+        self.robot.move(x=x, y=y)
+        # Lowering tip into the tube
+        # But first checking if the depth to immerse is specified
+        # TODO: add also heigth to immerse, and % of tube height
+        if immerse_volume is None:
+            max_vol = sample.getMaxVolume()
+            immerse_vol_fraction = max_vol * 0.1
+            # Currently tip will be immersed to 10% of the volume
+            # TODO: make it so user can specify percent themselves.
+            immerse_volume = max_vol - immerse_vol_fraction
+        # Actually lowering tip
+        z_immerse = sample.sampleVolToZ(volume=immerse_volume, tool=self)
+        self.robot.move(z=z_immerse)
+        # Actually dispensing the liquid
+        self.movePlungerToVol(volume)
+        # Updating volume amount in the tube
+        old_sample_vol = sample.getVolume()
+        new_sample_vol = old_sample_vol + volume
+        sample.setVolume(new_sample_vol)
+        # Not lifting the tip, in case you need to touch the wall or liquid,
+        # or pipette up and down.
+        # If requested, returning plunger back to 0.
+        # Some cases may require not retracting plunger, such as serial_device
+        # filling of many tubes with one liquid
+        if plunger_retract:
+            self.movePlungerToVol(0)
+    
 
     def getHowMuchLongerIsTheToolRelativeToTouchProbe(self):
         if self.tip_attached:
@@ -1044,13 +1109,45 @@ class mobile_gripper(mobile_tool):
     def moveServo(self, angle):
         self.writeAndWait("G0 "+str(angle), confirm_message='\r\n')
         
-    def operateGripper(self, angle):
+    def operateGripper(self, angle, powerdown=True):
         self.powerUp()
         self.moveServo(angle)
         time.sleep(1.5)
-        self.powerDown()
+        if powerdown:
+            self.powerDown()
 
+    def toDiameter(self, diameter, powerdown=True):
+        """
+        Opens gripper to specified diameter
+        Inputs:
+            diameter
+                diameter to open gripper to, mm
+            powerdown
+                when True, power of the servo motor responsible for moving
+                gripper jaws will be cut down after finishing movements.
+                This prevents servo motor stalling, overheating and eventual failure.
+        """
+        k = self.tool_data['angle_to_diam_slope']
+        b = self.tool_data['angle_to_diam_intercept']
+        angle = k * diameter + b
+        self.operateGripper(angle=angle, powerdown=powerdown)
+        
+        
+    def setAngleToDiameterConstants(self, slope, intercept):
+        """
+        Specifies constants for function to that recalculates diameter to 
+        servo motor angle.
+        """
+        self.tool_data['angle_to_diam_slope'] = slope
+        self.tool_data['angle_to_diam_intercept'] = intercept
+        # Saving slope and intercept parameters
+        self.save()
 
+    def grabSample(self, sample):
+        """
+        Grabs a specified sample
+        """
+        
 
 
 device_type_descriptions = [
