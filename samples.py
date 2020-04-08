@@ -9,8 +9,10 @@ class sample():
     Stores things like operational parameters for each sample,
     their history, position etc.
     """
+
+    # TODO: Make functions to calculate remaining sample depth from current volume (z, %) position
     
-    def __init__(self, sample_name, sample_type, volume=0, sample_data=None):
+    def __init__(self, sample_name, sample_type, volume=0, sample_data=None, capped=False):
         self.sample_data = sample_data
         
         if self.sample_data is None:
@@ -19,7 +21,12 @@ class sample():
                 }
         
         # Volume of liquid in the tube
-        self.volume = volume
+        self.setVolume(volume)
+        # Whether tube has cap
+        if capped:
+            self.addCap()
+        else:
+            self.removeCap()
         
         # Populating with saved settings
         config = configparser.ConfigParser()
@@ -67,18 +74,11 @@ class sample():
         return z
 
 
-    def sampleVolToZ(self, volume, tool):
+    def getDepthFromVolume(self, volume):
         """
-        Calculates Z at which the end of the tool will be at 
-        the level of the sample which corresponds to provided volume
+        Calculates distance from the top of the sample to the 
+        position of certain volume.
         """
-        rack = self.sample_data['rack']
-        x, y, z_rack = rack.calcWorkingPosition(self.sample_data['x_well'],
-                                                self.sample_data['y_well'],
-                                                tool)
-        sample_top_dz = self.params['sample_top_dz'][rack.rack_data['type']]
-        # Absolute Z coordinate of the top of the sample
-        z_sample_0 = z_rack - sample_top_dz
         # Dictionary that stores dependence of volume vs height
         # Ultimately provided in settings file
         vol_vs_z_dict = self.params['volume_vs_z']
@@ -89,17 +89,16 @@ class sample():
             standard_vol = float(key)
             diff = abs(standard_vol - volume)
             diff_dict[key] = diff
-        diff_val_list = list(diff_dict.values())
-        # Finding two closest standard points to provided volume
-        # They will be used to create linear function to find desired Z.
-        temp = min(diff_val_list)
-        diff_val_list.remove(temp)
-        temp2 = min(diff_val_list)
-        standard_vol_1 = [key for key in diff_dict if diff_dict[key] == temp][0]
-        standard_vol_2 = [key for key in diff_dict if diff_dict[key] == temp2][0]
+        # Getting closest standard volume to the provided volume
+        standard_vol_1 = min(diff_dict, key=diff_dict.get)
+        # Removing the standard volume from the dV dictionary
+        diff_dict.pop(standard_vol_1, None)
+        # Getting second closest standard volume 
+        # After removing closest standard volume, same function will provide second closest.
+        standard_vol_2 = min(diff_dict, key=diff_dict.get)
+        # Getting Z levels associated with standard volumes
         standard_z_1 = vol_vs_z_dict[standard_vol_1]
         standard_z_2 = vol_vs_z_dict[standard_vol_2]
-        
         # Using obtained points, calculating arguments of linear function, that
         # includes those points
         p = [float(standard_vol_1), standard_z_1]
@@ -111,6 +110,25 @@ class sample():
         
         # Using obtained linear function, calculating Z relative to the top of the tube
         z_tube_insert = (c - a * volume) / b
+        
+        return z_tube_insert
+
+
+    def sampleVolToZ(self, volume, tool):
+        """
+        Calculates Z at which the end of the tool will be at 
+        the level of the sample which corresponds to provided volume
+        """
+        # TODO: Factor out z_sample_0 calc
+        rack = self.sample_data['rack']
+        x, y, z_rack = rack.calcWorkingPosition(self.sample_data['x_well'],
+                                                self.sample_data['y_well'],
+                                                tool)
+        sample_top_dz = self.params['sample_top_dz'][rack.rack_data['type']]
+        # Absolute Z coordinate of the top of the sample
+        z_sample_0 = z_rack - sample_top_dz
+
+        z_tube_insert = self.getDepthFromVolume(volume)
         
         # Calculating absolute Z value
         z = z_sample_0 + z_tube_insert
@@ -181,3 +199,27 @@ class sample():
         vols_list = [float(x) for x in vol_vs_z_dict.keys()]
         max_vol = max(vols_list)
         return max_vol
+        
+    def getUncappedGrippingOpenDiam(self):
+        """
+        Returns diameter to which to open gripper when approaching the sample
+        """
+        gripper_params = self.params['gripper_param']
+        return gripper_params["open_to_approach_uncapped"]
+        
+    def getUncappedGripDiam(self):
+        """
+        Returns diameter at which gripper would grip the sample
+        """
+        gripper_params = self.params['gripper_param']
+        return gripper_params["grip_uncapped"]
+        
+    def addCap(self):
+        self.capped = True
+        
+    def removeCap(self):
+        self.capped = False
+        
+    def isCapped(self):
+        return self.capped
+        

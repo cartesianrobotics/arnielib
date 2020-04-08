@@ -430,6 +430,25 @@ class mobile_tool(tool):
             pass
         self.robot.returnToolToCoord(x, y, z, z_init=z_init, speed_xy=speed_xy, speed_z=speed_z)
     
+
+    def getToSample(self, sample, z_above_the_top=10):
+        """
+        Will move robot towards the sample
+        """
+        # Current Z position
+        z = self.robot.getAxisPosition(axis='z')
+        # Z coordinate of the top of the sample
+        z_sample_top = sample.getSampleTopZ(self)
+        # Safe Z coordinate to approach.
+        z_safe = z_sample_top - z_above_the_top
+        # If the end of the tool is lower than safe Z coordinate, raise Z gantry
+        # Higher z value, lower the gantry is.
+        if z > z_safe:
+            self.robot.move(z=z_safe)
+        # Moving to the sample position
+        x, y = sample.getSampleCenterXY(self)
+        self.robot.move(x=x, y=y)
+
     
 
 class pipettor(mobile_tool):
@@ -622,19 +641,8 @@ class pipettor(mobile_tool):
         if (not self.tip_attached) and (not tip_ignore):
             print("ERROR: pipette tip was not attached.")
             return
-        # Current Z position
-        z = self.robot.getAxisPosition(axis='z')
-        # Z coordinate of the top of the sample
-        z_sample_top = sample.getSampleTopZ(self)
-        # Safe Z coordinate to approach.
-        z_safe = z_sample_top - 10
-        # If the end of the tool is lower than safe Z coordinate, raise Z gantry
-        # Higher z value, lower the gantry is.
-        if z > z_safe:
-            self.robot.move(z=z_safe)
-        # Moving to the sample position
-        x, y = sample.getSampleCenterXY(self)
-        self.robot.move(x=x, y=y)
+        # Moving robot towards the sample
+        self.getToSample(sample=sample)
         
         # Moving plunger down
         self.movePlungerToVol(volume)
@@ -678,22 +686,9 @@ class pipettor(mobile_tool):
         """
         Dispenses liquid from pipettor tip into specified sample
         """
-        # Making sure the robot will not crash into destination tube
-        # This will not prevent from crashing at anything in between, 
-        # it is up to a user to prevent this.
-        # Current Z position
-        z = self.robot.getAxisPosition(axis='z')
-        # Z coordinate of the top of the sample
-        z_sample_top = sample.getSampleTopZ(self)
-        # Safe Z coordinate to approach.
-        z_safe = z_sample_top - 10
-        # If the end of the tool is lower than safe Z coordinate, raise Z gantry
-        # Higher z value, lower the gantry is.
-        if z > z_safe:
-            self.robot.move(z=z_safe)
-        # Moving to the sample position
-        x, y = sample.getSampleCenterXY(self)
-        self.robot.move(x=x, y=y)
+        # Moving robot towards the sample
+        self.getToSample(sample=sample)
+        
         # Lowering tip into the tube
         # But first checking if the depth to immerse is specified
         # TODO: add also heigth to immerse, and % of tube height
@@ -1143,11 +1138,52 @@ class mobile_gripper(mobile_tool):
         # Saving slope and intercept parameters
         self.save()
 
-    def grabSample(self, sample):
+    def grabSample(self, sample, vol_to_grab=None, 
+                   man_open_diam=None, man_grip_diam=None, powerdown=False,
+                   extra_retraction_dz=20):
         """
         Grabs a specified sample
         """
+        # Moving robot towards the sample
+        self.getToSample(sample=sample)
+        # Open gripper
+        if man_open_diam is not None:
+            open_diam = man_open_diam
+        elif sample.isCapped():
+            # TODO: add procedures for capped samples
+            pass
+        else:
+            open_diam = sample.getUncappedGrippingOpenDiam()
+        self.toDiameter(diameter=open_diam, powerdown=powerdown)
         
+        # Moving gripper down to grab
+        if vol_to_grab is None:
+            max_vol = sample.getMaxVolume()
+            fraction_vol_to_grab = max_vol * 0
+            # Currently gripper will be immersed to 0% of the volume
+            # For example, if volume is 50 uL, then gripping will happend at 50 uL position.
+            # TODO: make it so user can specify percent themselves.
+            vol_to_grab = max_vol - fraction_vol_to_grab
+        z_grab = sample.sampleVolToZ(volume=vol_to_grab, tool=self)
+        self.robot.move(z=z_grab)
+        
+        # Actually grabbing the tube
+        if man_grip_diam is not None:
+            grab_diam = man_grip_diam
+        elif sample.isCapped():
+            # TODO: add procedures for capped samples
+            pass
+        else:
+            grab_diam = sample.getUncappedGripDiam()
+        self.toDiameter(diameter=grab_diam, powerdown=powerdown)
+        
+        # Figuring the height to lift the sample, so it is out of the rack
+        dist_top_to_grab_point = sample.getDepthFromVolume(vol_to_grab)
+        dist_top_to_bottom = sample.getDepthFromVolume(0)
+        sample_protrude_from_gripper = dist_top_to_bottom - dist_top_to_grab_point
+        full_retraction_dz = sample_protrude_from_gripper + extra_retraction_dz
+        z_retract = z_grab - full_retraction_dz
+        self.robot.move(z=z_retract)
 
 
 device_type_descriptions = [
