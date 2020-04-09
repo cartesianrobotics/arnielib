@@ -40,6 +40,13 @@ class sample():
         filehandler = open('configs/'+params_path, 'r')
         self.params = json.loads(filehandler.read())
         filehandler.close()
+        
+        # Sample length
+        try:
+            self.length = float(config['geometry']['length'])
+        except:
+            self.length = 0
+        
         #try:
         #    params_path = str(config['properties']['params'])
         #    filehandler = open('configs/'+params_path, 'r')
@@ -47,6 +54,13 @@ class sample():
         #    filehandler.close()
         #except:
         #    self.params = {}
+        
+        # This parameter stores z value relative to the sample top, 
+        # at which sample is engaged.
+        # For example, if sample total length is 30 mm, 
+        # and a gripper grabs it at upper 10 mm position, then
+        # self.fample_engaged_dz = 10
+        self.sample_engaged_dz = None
             
     
     def place(self, rack, x_well, y_well):
@@ -56,6 +70,15 @@ class sample():
         self.sample_data['rack'] = rack
         self.sample_data['x_well'] = x_well
         self.sample_data['y_well'] = y_well
+    
+
+    def getSampleHeightAboveRack(self):
+        """
+        Returns arbitrary height of sample above the rack where it is 
+        currently placed (in mm).
+        """
+        rack = self.sample_data['rack']
+        return self.params['sample_top_dz'][rack.rack_data['type']]
         
     
     def sampleDepthToZ(self, height, tool):
@@ -67,7 +90,7 @@ class sample():
         x, y, z_rack = rack.calcWorkingPosition(self.sample_data['x_well'],
                                                 self.sample_data['y_well'],
                                                 tool)
-        sample_top_dz = self.params['sample_top_dz'][rack.rack_data['type']]
+        sample_top_dz = self.getSampleHeightAboveRack()
         z_sample_0 = z_rack - sample_top_dz
         
         z = z_sample_0 + height
@@ -124,7 +147,7 @@ class sample():
         x, y, z_rack = rack.calcWorkingPosition(self.sample_data['x_well'],
                                                 self.sample_data['y_well'],
                                                 tool)
-        sample_top_dz = self.params['sample_top_dz'][rack.rack_data['type']]
+        sample_top_dz = self.getSampleHeightAboveRack()
         # Absolute Z coordinate of the top of the sample
         z_sample_0 = z_rack - sample_top_dz
 
@@ -144,7 +167,7 @@ class sample():
         x, y, z_rack = rack.calcWorkingPosition(self.sample_data['x_well'],
                                                 self.sample_data['y_well'],
                                                 tool)
-        sample_top_dz = self.params['sample_top_dz'][rack.rack_data['type']]
+        sample_top_dz = self.getSampleHeightAboveRack()
         # Absolute Z coordinate of the top of the sample
         z_sample_0 = z_rack - sample_top_dz
         # Dictionary that stores dependence of volume vs height
@@ -172,7 +195,7 @@ class sample():
         x, y, z_rack = rack.calcWorkingPosition(self.sample_data['x_well'],
                                                 self.sample_data['y_well'],
                                                 tool)
-        sample_top_dz = self.params['sample_top_dz'][rack.rack_data['type']]
+        sample_top_dz = self.getSampleHeightAboveRack()
         # Absolute Z coordinate of the top of the sample
         z_sample_0 = z_rack - sample_top_dz
         return z_sample_0
@@ -199,6 +222,26 @@ class sample():
         vols_list = [float(x) for x in vol_vs_z_dict.keys()]
         max_vol = max(vols_list)
         return max_vol
+    
+    def setSampleEngagedPosition(self, dz):
+        self.sample_engaged_dz = dz
+        
+    def disengage(self):
+        self.sample_engaged_dz = None
+    
+    def getSampleRemainingLength(self, dz):
+        """
+        Returns remaining length of sample below given relative z.
+        Inputs:
+            dz 
+                in mm, distance from top of the sample
+        Returns:
+            z_remaining
+                in mm, distance from dz to the very bottom of the sample
+                (not 0 volume mark, but the very bottom)
+        """
+        return self.length - dz
+
         
     def getUncappedGrippingOpenDiam(self):
         """

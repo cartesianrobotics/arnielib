@@ -449,6 +449,18 @@ class mobile_tool(tool):
         x, y = sample.getSampleCenterXY(self)
         self.robot.move(x=x, y=y)
 
+    def getToPosition(self, rack, column, row, z_above_the_top=10):
+        """
+        Moves robot towards specified position. X an Y only; Z may be rizen, but not lowered.
+        """
+        # Current Z position
+        z = self.robot.getAxisPosition(axis='z')
+        
+        x, y, z_working = rack.calcWorkingPosition(well_col=column, well_row=row, tool=self)
+        z_safe = z_working - z_above_the_top
+        if z > z_safe:  
+            self.robot.move(z=z_safe)
+        self.robot.move(x=x, y=y)
     
 
 class pipettor(mobile_tool):
@@ -1084,6 +1096,9 @@ class mobile_gripper(mobile_tool):
                  tool_name=tool_name,
                  welcome_message=welcome_message)
         self.eol = ''
+        self.gripper_has_something = False
+        self.added_z_length = 0
+        self.sample = None
 
     @classmethod
     def getTool(cls, robot):
@@ -1176,14 +1191,80 @@ class mobile_gripper(mobile_tool):
         else:
             grab_diam = sample.getUncappedGripDiam()
         self.toDiameter(diameter=grab_diam, powerdown=powerdown)
-        
-        # Figuring the height to lift the sample, so it is out of the rack
+        # Temporary storing sample object in the tool, as it will be used
+        # to calculate parameters to place it somewhere.
+        self.sample = sample
         dist_top_to_grab_point = sample.getDepthFromVolume(vol_to_grab)
-        dist_top_to_bottom = sample.getDepthFromVolume(0)
-        sample_protrude_from_gripper = dist_top_to_bottom - dist_top_to_grab_point
-        full_retraction_dz = sample_protrude_from_gripper + extra_retraction_dz
-        z_retract = z_grab - full_retraction_dz
+        self.sample.setSampleEngagedPosition(dist_top_to_grab_point)
+        self.added_z_length = sample.getSampleRemainingLength(dist_top_to_grab_point)
+        self.gripper_has_something = True
+        # Calculating retraction height. It will be same as z_grab,
+        # but now sampleVolToZ will account for added_z_length and extra_retraction_dz
+        z_retract = sample.sampleVolToZ(volume=vol_to_grab, tool=self) - extra_retraction_dz
+        
+        ## Figuring the height to lift the sample, so it is out of the rack
+        #dist_top_to_grab_point = sample.getDepthFromVolume(vol_to_grab)
+        #dist_top_to_bottom = sample.getDepthFromVolume(0)
+        #sample_protrude_from_gripper = dist_top_to_bottom - dist_top_to_grab_point
+        #full_retraction_dz = sample_protrude_from_gripper + extra_retraction_dz
+        #z_retract = z_grab - full_retraction_dz
         self.robot.move(z=z_retract)
+        
+    
+    def placeSample(self, rack, column, row, vol_grabbed=None, man_open_diam=None, 
+                    powerdown=True, retract=20):
+        
+        # Moving X and Y to the rack position
+        self.getToPosition(rack=rack, column=column, row=row)
+        x, y, z = rack.calcWorkingPosition(well_col=column, well_row=row, tool=self)
+        rack_depth = self.sample.length - self.sample.getSampleHeightAboveRack()
+        z_final = z + rack_depth
+        self.robot.move(z=z_final)
+        # Opening gripper
+        if man_open_diam is not None:
+            open_diam = man_open_diam
+        elif self.sample.isCapped():
+            # TODO: add procedures for capped samples
+            pass
+        else:
+            open_diam = self.sample.getUncappedGrippingOpenDiam()
+        self.toDiameter(diameter=open_diam, powerdown=powerdown)
+        # Making sample not in gripper
+        self.sample.disengage()
+        self.gripper_has_something = False
+        self.added_z_length = 0
+        sample = self.sample
+        self.sample = None
+        # "placing" sample into the new position
+        sample.place(rack, column, row)
+        # Retracting
+        self.robot.moveAxisDelta(axis='z', value=-retract)
+        
+        return sample
+            
+    
+    
+    # TODO: drop sample immediately
+    
+    def getHowMuchLongerIsTheToolRelativeToTouchProbe(self):
+        if self.gripper_has_something:
+            
+            return self.delta_length_for_calibration + self.added_z_length
+        else:
+            return self.delta_length_for_calibration 
+        
+    # Redeclining function to account for grabbed tube
+    def getStalagmyteCoord(self):
+        """
+        Returns #stalagmyte (or #immobile_touch_probe) coordinates, that are 
+        saved in the object after calibration
+        """
+        if self.gripper_has_something:
+            return self.immob_probe_x, self.immob_probe_y, self.immob_probe_z - self.added_z_length
+        else:
+            return self.immob_probe_x, self.immob_probe_y, self.immob_probe_z
+
+        
 
 
 device_type_descriptions = [
