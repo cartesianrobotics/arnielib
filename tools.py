@@ -1217,6 +1217,10 @@ class mobile_gripper(mobile_tool):
         # Moving X and Y to the rack position
         self.getToPosition(rack=rack, column=column, row=row)
         x, y, z = rack.calcWorkingPosition(well_col=column, well_row=row, tool=self)
+        # "placing" sample into the new position
+        self.sample.place(rack, column, row)
+        # Calculating Z to which to lower the sample 
+        # Sample now has parameters of the destination rack and place
         rack_depth = self.sample.length - self.sample.getSampleHeightAboveRack()
         z_final = z + rack_depth
         self.robot.move(z=z_final)
@@ -1235,13 +1239,29 @@ class mobile_gripper(mobile_tool):
         self.added_z_length = 0
         sample = self.sample
         self.sample = None
-        # "placing" sample into the new position
-        sample.place(rack, column, row)
+        
         # Retracting
         self.robot.moveAxisDelta(axis='z', value=-retract)
         
         return sample
             
+    
+    def moveSample(self, sample, rack, column, row, vol_to_grab=None, 
+                   man_open_diam=None, man_grip_diam=None, powerdown=True,
+                   z_after_pickup=None, retract_after_placing=20):
+        # Grabbing sample
+        # Not powering down
+        self.grabSample(sample=sample, vol_to_grab=vol_to_grab,
+                        man_open_diam=man_open_diam, man_grip_diam=man_grip_diam)
+        # Optionally moving to a new Z position
+        if z_after_pickup is not None:
+            self.robot.move(z=z_after_pickup)
+        # Placing sample to a new position
+        sample = self.placeSample(rack=rack, column=column, row=row, vol_grabbed=vol_to_grab,
+                                  man_open_diam=man_open_diam, powerdown=powerdown,
+                                  retract=retract_after_placing)
+        return sample
+        
     
     
     # TODO: drop sample immediately
