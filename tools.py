@@ -727,6 +727,36 @@ class pipettor(mobile_tool):
         if plunger_retract:
             self.movePlungerToVol(0)
     
+    
+    def touchWall(self, sample, volume=None, movement=None):
+        """
+        Touches wall of the sample
+        Used after finishing pipetting, to remove remaining drop from the tip.
+        """
+        # It is better to touch wall as low as possible into the sample.
+        # First, figure out how much sample is filled, and get sample height
+        # above the liquid
+        if volume is None:
+            volume = sample.getVolume() + sample.getVolume() * 0.2
+        if volume > sample.getMaxVolume():
+            volume = sample.getMaxVolume()
+        # Calculating absolute Z value for given sample, at volume with given tool
+        z = sample.sampleVolToZ(volume=volume, tool=self)
+        # Moving to the level at which wall will be touched
+        self.robot.move(z=z)
+        # Calculating touch wall coordinates
+        x, y, z = self.robot.getPosition()
+        if movement is None:
+            movement = sample.inner_diameter / 2.0
+        y_touch = y + movement
+        # Moving to touch wall
+        self.robot.move(y=y_touch)
+        # Moving back
+        self.robot.move(y=y)
+                
+        
+        
+    
 
     def getHowMuchLongerIsTheToolRelativeToTouchProbe(self):
         if self.tip_attached:

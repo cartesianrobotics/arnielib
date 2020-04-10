@@ -46,20 +46,14 @@ class sample():
             self.length = float(config['geometry']['length'])
         except:
             self.length = 0
+        # Sample inner diameter
+        # Currently used to touch wall
+        # TODO: Add table of touch wall distances depending on the tube volume
+        try:
+            self.inner_diameter = float(config['geometry']['inner_diameter'])
+        except:
+            self.inner_diameter = 0
         
-        #try:
-        #    params_path = str(config['properties']['params'])
-        #    filehandler = open('configs/'+params_path, 'r')
-        #    self.params = json.loads(filehandler.read())
-        #    filehandler.close()
-        #except:
-        #    self.params = {}
-        
-        # This parameter stores z value relative to the sample top, 
-        # at which sample is engaged.
-        # For example, if sample total length is 30 mm, 
-        # and a gripper grabs it at upper 10 mm position, then
-        # self.fample_engaged_dz = 10
         self.sample_engaged_dz = None
             
     
