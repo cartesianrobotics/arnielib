@@ -741,6 +741,9 @@ class pipettor(mobile_tool):
         # Some cases may require not retracting plunger, such as serial_device
         # filling of many tubes with one liquid
         if plunger_retract:
+            # Now lifting the tip, if plunger retraction was chosen
+            z_retract = sample.sampleVolToZ(volume=max_vol + max_vol * 0.2, tool=self)
+            self.robot.move(z=z_retract)
             self.movePlungerToVol(0)
     
     
@@ -816,10 +819,35 @@ class pipettor(mobile_tool):
             sample.setVolume(curr_sample_vol)
 
         
-    def pipetteUpAndDown(self, sample, uptake_volume, repeats, gradual_vol=0, immerse_to_vol=None):
+    def pipetteUpAndDown(self, sample, uptake_volume, repeats, gradual_vol=0, immerse_to_vol=None, 
+                         uptake_delay=0, release_delay=0):
         """
         Pipette sample up and down. Used to mix a sample
         """
+        if gradual_vol > 0:
+            # Use gradual pipetting up and down
+            for i in range(repeats):
+                self.uptakeLiquidGradually(sample=sample, volume=uptake_volume, dv=gradual_vol,
+                                           uptake_delay=uptake_delay)
+                self.dispenseLiquid(sample=sample, volume=uptake_volume, 
+                                    release_delay=release_delay, plunger_retract=False)
+        else:
+            # Using normal pipetting
+            for i in range(repeats):
+                self.uptakeLiquid(sample=sample, volume=uptake_volume, uptake_delay=uptake_delay)
+                self.dispenseLiquid(sample=sample, volume=uptake_volume, 
+                                    release_delay=release_delay, plunger_retract=False)
+        # Moving up and releasing remaining liquid
+        max_vol = sample.getMaxVolume()
+        z = sample.sampleVolToZ(volume=max_vol+max_vol*0.2, tool=self)
+        self.robot.move(z=z)
+        # Moving plunger down as much as possible
+        self.movePlunger(-40)
+        self.touchWall(sample=sample)
+        # Z up
+        self.robot.move(z=z)
+        # Plunger back to 0
+        self.movePlungerToVol(0)
         
     
 
