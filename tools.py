@@ -431,9 +431,20 @@ class mobile_tool(tool):
         self.robot.returnToolToCoord(x, y, z, z_init=z_init, speed_xy=speed_xy, speed_z=speed_z)
     
 
-    def getToSample(self, sample, z_above_the_top=10):
+    def getToSample(self, sample, z_above_the_top=10, move_z=True):
         """
         Will move robot towards the sample
+        Inputs:
+            sample
+                Instance of the sample object. Must be placed into a rack 
+                by running sample.place(rack, column, row)
+            z_above_the_top
+                Tells function how much to lift Z above sample highest point.
+                Useful to prevent collisions, but won't check for other samples
+                that may be higher. 
+            move_z
+                If False, will not perform height check, and will not move Z axis at all.
+                
         """
         # Current Z position
         z = self.robot.getAxisPosition(axis='z')
@@ -443,7 +454,7 @@ class mobile_tool(tool):
         z_safe = z_sample_top - z_above_the_top
         # If the end of the tool is lower than safe Z coordinate, raise Z gantry
         # Higher z value, lower the gantry is.
-        if z > z_safe:
+        if z > z_safe and move_z:
             self.robot.move(z=z_safe)
         # Moving to the sample position
         x, y = sample.getSampleCenterXY(self)
@@ -624,7 +635,8 @@ class pipettor(mobile_tool):
         self.save()
 
     
-    def uptakeLiquid(self, sample, volume, uptake_delay=0, immerse_volume=None, tip_ignore=False):
+    def uptakeLiquid(self, sample, volume, uptake_delay=0, immerse_volume=None, tip_ignore=False,
+                     move_z_before_and_after_uptake=True):
         """
         Uptakes specified volume of liquid from the sample.
         Inputs:
@@ -646,7 +658,9 @@ class pipettor(mobile_tool):
                 Normally, function checks on whether the tip is attached to the pipettor, 
                 and will only proceed if attached. If this parameter is specified as True,
                 this check will be omitted.
-            
+            move_z_before_and_after_uptake
+                If False, will not move z axis when approaching to the sample,
+                and will not retract it when done pipetting.
         """
         # Checking whether the pipettor has a tip.
         # Will stop function if tip is not attached 
@@ -654,7 +668,8 @@ class pipettor(mobile_tool):
             print("ERROR: pipette tip was not attached.")
             return
         # Moving robot towards the sample
-        self.getToSample(sample=sample)
+        self.getToSample(sample=sample, move_z=move_z_before_and_after_uptake)
+        
         
         # Moving plunger down
         self.movePlungerToVol(volume)
@@ -689,8 +704,9 @@ class pipettor(mobile_tool):
         new_sample_vol = old_sample_vol - volume
         sample.setVolume(new_sample_vol)
         
-        # Moving robot from the tube
-        self.robot.move(z=z_safe)
+        ## Moving robot from the tube
+        #if move_z_before_and_after_uptake:
+        #    self.robot.move(z=z_safe)
         
             
     
@@ -754,7 +770,56 @@ class pipettor(mobile_tool):
         # Moving back
         self.robot.move(y=y)
                 
+
+    def uptakeLiquidGradually(self, sample, volume, dv, immerse_vol_frac=0.1, uptake_delay=0):
+        """
+        Uptake given amount of liquid not all at once, but little by little, 
+        gradually immersing pipette into the sample.
+        Sometimes, if you fully immerse a tip into the liquid, it will 
+        spill out of the tube. This function prevents that to happen, by 
+        gradually immersing the tip into the liquid and uptaking liquid little by little, 
+        until desired volume is obtained.
+        """
+        # This is the volume that remains to pipette
+        remaining_vol = volume
+        max_vol = sample.getMaxVolume()
+        immerse_dv = max_vol * immerse_vol_frac
+        while remaining_vol > 0:
+            # Checking if this is the first pipetting
+            if remaining_vol == volume:
+                #Approaching the sample
+                self.getToSample(sample=sample)
+                self.movePlungerToVol(volume)
+            curr_sample_vol = sample.getVolume()
+            # Pipetting
+            if remaining_vol >= dv:
+                curr_sample_vol = curr_sample_vol - dv
+                remaining_vol = remaining_vol - dv
+            else:
+                # Executes when volume that remains to pipette is smaller than 
+                # volume iteration. This is the final stage of pipetting
+                curr_sample_vol = curr_sample_vol - remaining_vol
+                remaining_vol = 0
+            
+            immerse_volume = curr_sample_vol - immerse_dv
+            # It may be that the sample has just enough liquid to pipette.
+            # In this case robot is lowering itself right to the bottom.
+            if immerse_volume < 0:
+                immerse_volume = 0
+            # Calculating absolute immerse height
+            z_immerse = sample.sampleVolToZ(volume=immerse_volume, tool=self)
+            # Moving sample to the immerse height
+            self.robot.move(z=z_immerse)
+            # Now (finally) uptaking the liquid
+            self.movePlungerToVol(remaining_vol)
+            time.sleep(uptake_delay)
+            sample.setVolume(curr_sample_vol)
+
         
+    def pipetteUpAndDown(self, sample, uptake_volume, repeats, gradual_vol=0, immerse_to_vol=None):
+        """
+        Pipette sample up and down. Used to mix a sample
+        """
         
     
 
