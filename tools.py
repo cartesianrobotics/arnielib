@@ -486,6 +486,8 @@ class pipettor(mobile_tool):
         
         # Loading parameters specific to pipettors from config file
         self.tip_added_z_length = float(self.config['geometry']['tip_added_length'])
+        # Maximum volume to pipette
+        self.max_allowed_vol = float(self.config['pipetting']['max_volume'])
         
         # Switch indicating whether tip is attached or not.
         self.tip_attached = False
@@ -495,6 +497,9 @@ class pipettor(mobile_tool):
             self.home(pipettor_speed=300)
         else:
             self.home(pipettor_speed=750)        
+            
+        
+        
             
     @classmethod
     def getTool(cls, robot, tool_name):
@@ -703,25 +708,20 @@ class pipettor(mobile_tool):
         old_sample_vol = sample.getVolume()
         new_sample_vol = old_sample_vol - volume
         sample.setVolume(new_sample_vol)
-        
-        ## Moving robot from the tube
-        #if move_z_before_and_after_uptake:
-        #    self.robot.move(z=z_safe)
-        
-            
+
     
-    def dispenseLiquid(self, sample, volume, release_delay=0, immerse_volume=None, plunger_retract=True):
+    def dispenseLiquid(self, sample, volume, release_delay=0, immerse_volume=None, plunger_retract=True,
+                       blow_extra=False):
         """
         Dispenses liquid from pipettor tip into specified sample
         """
         # Moving robot towards the sample
         self.getToSample(sample=sample)
-        
+        max_vol = sample.getMaxVolume()
         # Lowering tip into the tube
         # But first checking if the depth to immerse is specified
         # TODO: add also heigth to immerse, and % of tube height
         if immerse_volume is None:
-            max_vol = sample.getMaxVolume()
             immerse_vol_fraction = max_vol * 0.1
             # Currently tip will be immersed to 10% of the volume
             # TODO: make it so user can specify percent themselves.
@@ -740,6 +740,8 @@ class pipettor(mobile_tool):
         # If requested, returning plunger back to 0.
         # Some cases may require not retracting plunger, such as serial_device
         # filling of many tubes with one liquid
+        if blow_extra:
+            self.movePlunger(-40)
         if plunger_retract:
             # Now lifting the tip, if plunger retraction was chosen
             z_retract = sample.sampleVolToZ(volume=max_vol + max_vol * 0.2, tool=self)
@@ -849,6 +851,76 @@ class pipettor(mobile_tool):
         # Plunger back to 0
         self.movePlungerToVol(0)
         
+    
+    def moveLiquid(self, sample_origin, sample_destination, volume,
+                   uptake_delay=0, release_delay=0, immerse_volume_origin=None, 
+                   immerse_volume_destination=None, blow_extra=False, touch_wall=False):
+        """
+        Moves liquid from one sample to the other
+        """
+        self.uptakeLiquid(sample=sample_origin, volume=volume, uptake_delay=uptake_delay,
+                          immerse_volume=immerse_volume_origin)
+        self.dispenseLiquid(sample=sample_destination, volume=volume, release_delay=release_delay,
+                            immerse_volume=immerse_volume_destination, blow_extra=blow_extra)
+        if touch_wall:
+            self.touchWall(sample=sample_destination)
+        
+    
+    
+    def distributeLiquid(self, sample_origin, sample_destination_list, vol_list,
+                         uptake_delay=0, release_delay=0, immerse_vol_origin=None,
+                         immerse_volume_destination=None, touch_wall=False):
+        """
+        Takes liquid from one place and pipettes it into several samples sequentially, 
+        according to instructions
+        """
+        # Represents current volume of liquit inside pipettor's tip
+        vol_in_tip = 0
+        # This is how much total volume needs to be moved (to all samples)
+        remaining_vol_to_move = sum(vol_list)
+        # Represents absolute position (in microliters) to which to move
+        # plunger while dispensing
+        vol_to_move_plunger = 0
+        for sample_destination, volume in zip(sample_destination_list, vol_list):
+            # Every next cycle more liquid is dispensed, which is equivalent to 
+            # moving plunger to more volume
+            vol_to_move_plunger = vol_to_move_plunger + volume
+            sample_destination.sample_data['x_well'])
+            # Checking if tip has enough liquid in it
+            # If not, taking liquid from sample of origin
+            if vol_in_tip < volume:
+                # Moving to the sample origin
+                self.getToSample(sample=sample_origin)
+                # Plunger all the way down, to remove all liquid that may remain in 
+                # the tip from previous pipetting
+                self.movePlunger(-40)
+                # Touch wall to remove a possible droplet
+                self.touchWall(sample=sample_origin)
+                vol_in_tip = 0 # Now tip is empty
+                # Moving back up to make sure no liquid is taken when moving plunger up
+                tool.getToSample(sample=sample_origin)
+                # Figuring out how much liquid to uptake
+                if remaining_vol_to_move > self.max_allowed_vol:
+                    vol_to_uptake = self.max_allowed_vol
+                else:
+                    vol_to_uptake = remaining_vol_to_move
+                # Actually uptaking liquid
+                self.uptakeLiquid(sample=sample_origin, volume=vol_to_uptake,
+                                  uptake_delay=uptake_delay)
+                vol_in_tip = vol_to_uptake
+                # Resetting absolute position every time tip is refilled
+                vol_to_move_plunger = volume
+            # Now pipetting liquid into the next destination
+            # Take care not to retract plunger
+            self.dispenseLiquid(sample=sample_destination, volume=vol_to_move_plunger, 
+                                release_delay=release_delay, plunger_retract=False)
+            vol_in_tip = vol_in_tip - volume
+            # Touching wall to remove stuck groplet, if necessary
+            if touch_wall:
+                self.touchWall(sample=sample_destination)
+            # Decreasing total remaining volume to move
+            remaining_vol_to_move = remaining_vol_to_move - volume
+            
     
 
     def getHowMuchLongerIsTheToolRelativeToTouchProbe(self):
