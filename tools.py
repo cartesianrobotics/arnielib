@@ -641,7 +641,7 @@ class pipettor(mobile_tool):
 
     
     def uptakeLiquid(self, sample, volume, uptake_delay=0, immerse_volume=None, tip_ignore=False,
-                     move_z_before_and_after_uptake=True):
+                     move_z_before_and_after_uptake=True, bottom_gap=10, retract_z_speed=100):
         """
         Uptakes specified volume of liquid from the sample.
         Inputs:
@@ -696,13 +696,30 @@ class pipettor(mobile_tool):
             # In this case robot is lowering itself right to the bottom.
             if immerse_volume < 0:
                 immerse_volume = 0
-        # Actually immersing the tool into the tube
-        z_immerse = sample.sampleVolToZ(volume=immerse_volume, tool=self)
-        self.robot.move(z=z_immerse)
         
-        # Now (finally) uptaking the liquid
-        self.movePlungerToVol(0)
-        time.sleep(uptake_delay)
+        # Pipetting procedure will differ on whether the tip is fully immersed into the tube
+        if immerse_volume == 0:
+            # Tip should be fully immersed,
+            # the bottom of the tube will block liquid from uptaking.
+            # Solution is lower not fully to the bottom; uptake most of the liquid, then
+            # lower all the way down, and slowly retract, so remaining liquid has time to be 
+            # uptaken
+            z_immerse = sample.sampleVolToZ(volume=immerse_volume+bottom_gap, tool=self)
+            self.robot.move(z=z_immerse)
+            self.movePlungerToVol(bottom_gap)
+            time.sleep(uptake_delay)
+            z_immerse = sample.sampleVolToZ(volume=immerse_volume, tool=self)
+            self.robot.move(z=z_immerse)
+            self.movePlungerToVol(0)
+            time.sleep(uptake_delay)
+            z_immerse = sample.sampleVolToZ(volume=immerse_volume+bottom_gap, tool=self)
+            self.robot.move(z=z_immerse, speed_z=retract_z_speed)
+        else:
+            # Now (finally) uptaking the liquid
+            z_immerse = sample.sampleVolToZ(volume=immerse_volume, tool=self)
+            self.robot.move(z=z_immerse)
+            self.movePlungerToVol(0)
+            time.sleep(uptake_delay)
         
         # Updating sample volume
         old_sample_vol = sample.getVolume()
@@ -885,7 +902,6 @@ class pipettor(mobile_tool):
             # Every next cycle more liquid is dispensed, which is equivalent to 
             # moving plunger to more volume
             vol_to_move_plunger = vol_to_move_plunger + volume
-            sample_destination.sample_data['x_well'])
             # Checking if tip has enough liquid in it
             # If not, taking liquid from sample of origin
             if vol_in_tip < volume:
@@ -898,7 +914,7 @@ class pipettor(mobile_tool):
                 self.touchWall(sample=sample_origin)
                 vol_in_tip = 0 # Now tip is empty
                 # Moving back up to make sure no liquid is taken when moving plunger up
-                tool.getToSample(sample=sample_origin)
+                self.getToSample(sample=sample_origin)
                 # Figuring out how much liquid to uptake
                 if remaining_vol_to_move > self.max_allowed_vol:
                     vol_to_uptake = self.max_allowed_vol
