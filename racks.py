@@ -291,3 +291,60 @@ class rack():
         f = open(rack_name+'.json', 'w')
         f.write(json.dumps(self.rack_data))
         f.close()
+
+
+
+class consumables(rack):
+    """
+    Handles racks with consumables, such as pipette tips
+    """            
+    def getReadyItemsList(self):
+        try: 
+            return self.rack_data['ready_items_list']
+        except:
+            return []
+            
+            
+    def setItemsAsReady(self, coord_list):
+        """
+        Specifies list of positions in rack, where ready items are stored
+        Inputs:
+            coord_list
+                List of positins for consumable items. 
+                Example: [(0, 0), (0, 1), (3, 4), ...]
+        """
+        present_items = self.getReadyItemsList()
+        present_items = present_items + coord_list
+        self.rack_data['ready_items_list'] = present_items
+        self.save()
+        
+        
+    def removeConsumableItems(self, coord_list):
+        present_items = self.getReadyItemsList()
+        for item in coord_list:
+            try:
+                present_items.remove(item)
+            except:
+                pass
+        self.rack_data['ready_items_list'] = present_items
+        self.save()
+        
+    
+    def getNextConsumable(self, discard=True):
+        ready_items = self.getReadyItemsList()
+        item = ready_items[0]
+        self.removeConsumableItems([item])
+        return item
+    
+    
+    def replaceConsumables(self):
+        """
+        Replentish consumables, making all the possible wells for given rack filled with
+        ready to use consumables. Real world analog is replacing the rack of tips at the same spot
+        """
+        coord_list = []
+        for i in range(self.columns):
+            for j in range (self.rows):
+                coord_list.append((i, j))
+        self.rack_data['ready_items_list'] = []
+        self.setItemsAsReady(coord_list)
