@@ -726,6 +726,91 @@ class pipettor(mobile_tool):
         new_sample_vol = old_sample_vol - volume
         sample.setVolume(new_sample_vol)
 
+
+    def _sideTubeUptake(self, extra_vol, uptake_delay, uptake_vol, axis, distance):
+        extra_vol = extra_vol - uptake_vol
+        self.robot.moveAxisDelta(axis=axis, value=distance)
+        self.movePlungerToVol(extra_vol)
+        time.sleep(uptake_delay)
+        self.robot.moveAxisDelta(axis=axis, value=-distance)
+        return extra_vol
+
+    
+    def uptakeAll(self, sample, tip_ignore=False, volume=None, extra_vol_frac=0.2, 
+                  immerse_levels_list=[10, 0], side_uptake_radius=2,  uptake_delay=0):
+        """
+        This function tries to uptake all the liquid that the tube may have, drying it up completely.
+        Inputs:
+            sample
+                Object of a sample class. Used to obtain volume and movement parameters
+            tip_ignore
+                When True, do not perform the check on whether the tip is present. Default False.
+            volume
+                Expected volume in the sample. When provided, this value will be used
+                to calculate uptaking scenario, instead of the value stored in sample object
+            extra_vol_frac
+                Tool will try to uptake move volume than there is in the tube, to make sure it is dry.
+                This parameter specifies what fraction of the total maximum sample volume 
+                will be used. Example: if tube max volume is 2 mL, currently tube contains 500 uL,
+                and extra_vol_frac = 0.1, than the tool will try to uptake 700 uL.
+            immerse_levels_list
+                List of volumes at which to perform uptake. Robot will move to the first value,
+                and uptake "volume" amount. Then it will move to the next value and uptake little 
+                bit more, and so on. Total uptaken volume is volume + max_vol * extra_vol_frac
+            side_uptake_radius
+                Robot will attempt to uptake liquid at the center and little to the sides,
+                to get possible droplets at the side of the tube. This value shows distance from
+                the center at which to uptake.
+            uptake_delay
+                Will wait that number of seconds after moving plunger up. Use when liquid is 
+                viscous.
+        """
+        
+        if (not self.tip_attached) and (not tip_ignore):
+            print("ERROR: pipette tip was not attached.")
+            return
+        
+        # Moving robot towards the sample
+        self.getToSample(sample=sample)
+    
+        # Figuring out volume
+        if volume is None:
+            volume = sample.getVolume()
+        
+        tool_max_vol = self.max_allowed_vol
+        extra_vol = tool_max_vol * extra_vol_frac
+        # Moving plunger down
+        self.movePlungerToVol(volume+extra_vol)
+        # Immersing into the tube
+        z = sample.sampleVolToZ(volume=immerse_levels_list[0], tool=self)
+        self.robot.move(z=z)
+        # Uptaking most of the liquid volume (until extra volume mark)
+        self.movePlungerToVol(extra_vol)
+        time.sleep(uptake_delay)
+        # Now going through the rest of the immersing levels
+        vol_uptake_per_cycle = extra_vol / (len(immerse_levels_list[1:]) * 1.0)
+        vol_uptake_per_suck = vol_uptake_per_cycle / 5.0
+        for level in immerse_levels_list[1:]:
+            z = sample.sampleVolToZ(volume=level, tool=self)
+            self.robot.move(z=z)
+            # Sucking at the center
+            extra_vol = self._sideTubeUptake(extra_vol, uptake_delay/5.0, 
+                                       vol_uptake_per_suck, 'x', 0)
+            # Sucking at the north
+            extra_vol = self._sideTubeUptake(extra_vol, uptake_delay/5.0, 
+                                       vol_uptake_per_suck, 'y', -side_uptake_radius)
+            # Sucking at the south
+            extra_vol = self._sideTubeUptake(extra_vol, uptake_delay/5.0, 
+                                       vol_uptake_per_suck, 'y', side_uptake_radius)
+            # Sucking at the west
+            extra_vol = self._sideTubeUptake(extra_vol, uptake_delay/5.0, 
+                                       vol_uptake_per_suck, 'x', -side_uptake_radius)
+            # Sucking at the east
+            extra_vol = self._sideTubeUptake(extra_vol, uptake_delay/5.0, 
+                                       vol_uptake_per_suck, 'x', side_uptake_radius)
+        sample.setVolume(0)
+        
+        
     
     def dispenseLiquid(self, sample, volume, release_delay=0, immerse_volume=None, plunger_retract=True,
                        blow_extra=False):
