@@ -727,10 +727,13 @@ class pipettor(mobile_tool):
         sample.setVolume(new_sample_vol)
 
 
-    def _sideTubeUptake(self, extra_vol, uptake_delay, uptake_vol, axis, distance):
+    def _sideTubeUptake(self, extra_vol, uptake_delay, uptake_vol, axis, distance, dz):
         extra_vol = extra_vol - uptake_vol
         self.robot.moveAxisDelta(axis=axis, value=distance)
+        self.robot.moveAxisDelta(axis='z', value=dz)
         self.movePlungerToVol(extra_vol)
+        time.sleep(uptake_delay)
+        self.robot.moveAxisDelta(axis='z', value=-dz)
         time.sleep(uptake_delay)
         self.robot.moveAxisDelta(axis=axis, value=-distance)
         return extra_vol
@@ -791,23 +794,24 @@ class pipettor(mobile_tool):
         vol_uptake_per_cycle = extra_vol / (len(immerse_levels_list[1:]) * 1.0)
         vol_uptake_per_suck = vol_uptake_per_cycle / 5.0
         for level in immerse_levels_list[1:]:
-            z = sample.sampleVolToZ(volume=level, tool=self)
-            self.robot.move(z=z)
+            z_low = sample.sampleVolToZ(volume=level, tool=self)
+            z_high = sample.sampleVolToZ(volume=immerse_levels_list[0], tool=self)
+            dz = z_low - z_high
             # Sucking at the center
             extra_vol = self._sideTubeUptake(extra_vol, uptake_delay/5.0, 
-                                       vol_uptake_per_suck, 'x', 0)
+                                       vol_uptake_per_suck, 'x', 0, dz)
             # Sucking at the north
             extra_vol = self._sideTubeUptake(extra_vol, uptake_delay/5.0, 
-                                       vol_uptake_per_suck, 'y', -side_uptake_radius)
+                                       vol_uptake_per_suck, 'y', -side_uptake_radius, dz)
             # Sucking at the south
             extra_vol = self._sideTubeUptake(extra_vol, uptake_delay/5.0, 
-                                       vol_uptake_per_suck, 'y', side_uptake_radius)
+                                       vol_uptake_per_suck, 'y', side_uptake_radius, dz)
             # Sucking at the west
             extra_vol = self._sideTubeUptake(extra_vol, uptake_delay/5.0, 
-                                       vol_uptake_per_suck, 'x', -side_uptake_radius)
+                                       vol_uptake_per_suck, 'x', -side_uptake_radius, dz)
             # Sucking at the east
             extra_vol = self._sideTubeUptake(extra_vol, uptake_delay/5.0, 
-                                       vol_uptake_per_suck, 'x', side_uptake_radius)
+                                       vol_uptake_per_suck, 'x', side_uptake_radius, dz)
         sample.setVolume(0)
         
         
