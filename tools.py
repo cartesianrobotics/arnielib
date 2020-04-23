@@ -954,7 +954,7 @@ class pipettor(mobile_tool):
         self.movePlungerToVol(0)
         
     
-    def moveLiquid(self, sample_origin, sample_destination, volume,
+    def moveLiquid(self, sample_origin, sample_destination, volume, raise_z=None,
                    uptake_delay=0, release_delay=0, immerse_volume_origin=None, 
                    immerse_volume_destination=None, blow_extra=False, touch_wall=False):
         """
@@ -962,6 +962,9 @@ class pipettor(mobile_tool):
         """
         self.uptakeLiquid(sample=sample_origin, volume=volume, uptake_delay=uptake_delay,
                           immerse_volume=immerse_volume_origin)
+        # Raising Z level, to prevent the case when robot would hit something on its way
+        if raise_z is not None:
+            self.robot.move(z=raise_z)
         self.dispenseLiquid(sample=sample_destination, volume=volume, release_delay=release_delay,
                             immerse_volume=immerse_volume_destination, blow_extra=blow_extra)
         if touch_wall:
@@ -969,7 +972,7 @@ class pipettor(mobile_tool):
         
     
     
-    def distributeLiquid(self, sample_origin, sample_destination_list, vol_list,
+    def distributeLiquid(self, sample_origin, sample_destination_list, vol_list, raise_z=None,
                          uptake_delay=0, release_delay=0, immerse_vol_origin=None,
                          immerse_volume_destination=None, touch_wall=False):
         """
@@ -1011,6 +1014,9 @@ class pipettor(mobile_tool):
                 vol_in_tip = vol_to_uptake
                 # Resetting absolute position every time tip is refilled
                 vol_to_move_plunger = volume
+            # Raising Z level, to prevent the case when robot would hit something on its way
+            if raise_z is not None:
+                self.robot.move(z=raise_z)
             # Now pipetting liquid into the next destination
             # Take care not to retract plunger
             self.dispenseLiquid(sample=sample_destination, volume=vol_to_move_plunger, 
