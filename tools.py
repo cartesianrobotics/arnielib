@@ -572,6 +572,9 @@ class pipettor(mobile_tool):
         self.robot.move(z=z_dropoff)
         # Dropping off tip
         self.dropTip()
+        
+    def dropTipToWaste(self, waste_rack, raise_z=0):
+        self.dropOffTipToPosition(rack=waste_rack, column=0, row=0, raise_z=raise_z)
 
     
     def dropTip(self, plunger_lower=-40, plunger_raise=-2):
@@ -816,13 +819,18 @@ class pipettor(mobile_tool):
         
         
     
-    def dispenseLiquid(self, sample, volume, release_delay=0, immerse_volume=None, plunger_retract=True,
+    def dispenseLiquid(self, sample, volume, 
+                       dx=0, dy=0, release_delay=0, immerse_volume=None, plunger_retract=True,
                        blow_extra=False):
         """
         Dispenses liquid from pipettor tip into specified sample
         """
         # Moving robot towards the sample
         self.getToSample(sample=sample)
+        # If shift is needed, here it goes:
+        self.robot.moveAxisDelta(axis='x', value=dx)
+        self.robot.moveAxisDelta(axis='y', value=dy)
+        # What is maximum volume can fit in this sample?
         max_vol = sample.getMaxVolume()
         # Lowering tip into the tube
         # But first checking if the depth to immerse is specified
