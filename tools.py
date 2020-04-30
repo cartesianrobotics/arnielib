@@ -1526,8 +1526,30 @@ class mobile_gripper(mobile_tool):
         
     
     def placeSample(self, rack, column, row, vol_grabbed=None, man_open_diam=None, 
-                    powerdown=True, retract=20):
-        
+                    powerdown=True, retract=20, dz=0):
+        """
+        Places sample that the gripper currently holding into the specified position.
+        Inputs:
+            rack
+                object of a rack class
+            column, row 
+                slot in the rack to place sample into
+            vol_grabbed
+                Only for compatibility, currently not used
+            man_open_diam
+                Specify the diameter to which to open the gripper. If not provided,
+                function uses value from sample settings.
+            powerdown
+                After releasing the sample, power down servo motor. If False, than 
+                the motor is kept powered up
+            retract
+                value at which to raise gripper after releasing the sample.
+                Default is 20 mm
+            dz
+                When placing the sample, you can specify how much deeper the sample
+                need to be placed. Default is 0, and the insertion is calculated
+                according to the sample settings.
+        """
         # Moving X and Y to the rack position
         self.getToPosition(rack=rack, column=column, row=row)
         x, y, z = rack.calcWorkingPosition(well_col=column, well_row=row, tool=self)
@@ -1536,7 +1558,7 @@ class mobile_gripper(mobile_tool):
         # Calculating Z to which to lower the sample 
         # Sample now has parameters of the destination rack and place
         rack_depth = self.sample.length - self.sample.getSampleHeightAboveRack()
-        z_final = z + rack_depth
+        z_final = z + rack_depth + dz
         self.robot.move(z=z_final)
         # Opening gripper
         if man_open_diam is not None:
@@ -1560,9 +1582,38 @@ class mobile_gripper(mobile_tool):
         return sample
             
     
+    def pushSample(self, sample, man_open_diam=None, powerdown=True, dz=0):
+        """
+        Pushes the sample deeper into its current position.
+        Some samples tend to pop up from the current position, or simply may not sit tight
+        enough. This function gently presses on top of the sample.
+        """
+        self.getToSample(sample=sample)
+        # Open gripper
+        if man_open_diam is not None:
+            open_diam = man_open_diam
+        elif sample.isCapped():
+            # TODO: add procedures for capped samples
+            pass
+        else:
+            open_diam = sample.inner_diameter
+        self.toDiameter(diameter=open_diam, powerdown=powerdown)
+        
+        z_start = self.robot.getAxisPosition(axis='z')
+        
+        z = sample.getSampleTopZ(tool=self)
+        z_final = z + dz
+        # Coarse approach
+        self.robot.move(z=z-5)
+        # Final slow approach
+        self.robot.move(z=z_final, speed_z=300)
+        self.robot.move(z=z_start)
+        
+    
     def moveSample(self, sample, rack, column, row, vol_to_grab=None, 
                    man_open_diam=None, man_grip_diam=None, powerdown=True,
-                   z_after_pickup=None, retract_after_placing=20):
+                   z_after_pickup=None, retract_after_placing=20, dz=0, 
+                   push_sample=False, push_dz=0, push_open_diam=None):
         # Grabbing sample
         # Not powering down
         self.grabSample(sample=sample, vol_to_grab=vol_to_grab,
@@ -1573,7 +1624,9 @@ class mobile_gripper(mobile_tool):
         # Placing sample to a new position
         sample = self.placeSample(rack=rack, column=column, row=row, vol_grabbed=vol_to_grab,
                                   man_open_diam=man_open_diam, powerdown=powerdown,
-                                  retract=retract_after_placing)
+                                  retract=retract_after_placing, dz=dz)
+        if push_sample:
+            self.pushSample(sample=sample, man_open_diam=push_open_diam, powerdown=powerdown, dz=push_dz)
         return sample
         
     
