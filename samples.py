@@ -260,3 +260,78 @@ class sample():
     def isCapped(self):
         return self.capped
         
+
+class plate():
+    """
+    Handles plates. Plate may be a real "plate", such as 96-well plate, or the other
+    type of sample array. For example, 8-PCR tube stripe is also considered a plate.
+    """
+    
+    #TODO: Sometimes plates are smaller than corresponding racks. Need capability to shift
+    # plate related to rack
+    
+    def __init__(self, plate_name, plate_type):
+        """
+        Initializes plate of samples (array of samples)
+        
+        There should be a config files placed in configs/%plate_type%.ini and configs/%plate_type%_well.ini
+        """
+        
+        self.plate_data = {}
+        # Reading parameters for config file
+        config = configparser.ConfigParser()
+        config_path = 'configs/' + plate_type + '.ini'
+        config.read(config_path)
+        
+        self.columns = int(config['wells']['columns'])
+        self.rows = int(config['wells']['rows'])
+        self.dist_between_cols = float(config['wells']['distance_between_columns'])
+        self.dist_between_rows = float(config['wells']['distance_between_rows'])
+        self.dist_cntr_to_1st_col = float(config['wells']['distance_center_to_1st_column'])
+        self.dist_cntr_to_1st_row = float(config['wells']['distance_center_to_1st_row'])
+
+        self.samples_list = self._initSamples(plate_name, plate_type)
+        
+    def _initSamples(self, plate_name, plate_type):
+        samples_list = []
+        for col in range(self.columns):
+            for row in range(self.rows):
+                s_name = plate_name + '_col_' + str(col) + '_row_' + str(row)
+                s = samples.sample(sample_name=s_name, sample_type=plate_type+'_well')
+                # Setting a position of a sample
+                s.sample_data['x_well'] = col
+                s.sample_data['y_well'] = row
+                samples_list.append(s)
+        return samples_list
+    
+    def getSample(self, column, row):
+        for s in self.samples_list:
+            if (s.sample_data['x_well'] == column) and (s.sample_data['y_well'] == row):
+                return s
+            
+    def getSamples(self, col_row_list):
+        """
+        Returns list of samples objects
+        Input:
+            col_row_list
+                List of sample coordinates in the plate. Each coordinate is 2 element list: [column, row]
+                Example: [[3, 1], [6, 7], [11, 0]]
+        Returns:
+            List of sample objects
+        """
+        samples_to_return_list = []
+        for col_row in col_row_list:
+            col = col_row[0]
+            row = col_row[1]
+            s = self.getSample(col, row)
+            samples_to_return_list.append(s)
+        return samples_to_return_list
+    
+    def getAllSamples(self):
+        return self.samples_list
+    
+    def place(self, rack):
+        self.plate_data['rack'] = rack
+        sample_list = self.getAllSamples()
+        for s in sample_list:
+            s.sample_data['rack'] = rack

@@ -1630,6 +1630,11 @@ class mobile_gripper(mobile_tool):
         return sample
         
     
+    def discardSample(self, sample, waste_rack, vol_to_grab=None, man_open_diam=None, man_grip_diam=None,
+                      z_after_pickup=None):
+        self.moveSample(sample=sample, rack=waste_rack, column=0, row=0, 
+                        vol_to_grab=vol_to_grab, man_open_diam=man_open_diam, man_grip_diam=man_grip_diam,
+                        z_after_pickup=z_after_pickup)
     
     # TODO: drop sample immediately
     
