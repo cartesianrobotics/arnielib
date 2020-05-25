@@ -276,6 +276,23 @@ class rack():
         return x - dx, y - dy, z - dz
     
     
+    def calcRackCenterFullCalibration(self, tool):
+        """
+        Given calibrated tool object, calculates X, Y, Z coordinates of the rack center,
+        that takes into account both tool and rack calibrations.
+        """
+        [x, y, z] = self.getCalibratedRackCenter()
+        z = z + self.z_working_height
+        tool_stal_x, tool_stal_y, tool_stal_z = tool.getStalagmyteCoord()
+        [tp_stal_x, tp_stal_y, tp_stal_z] = self.rack_data['pos_stalagmyte']
+        
+        dx = tp_stal_x - tool_stal_x
+        dy = tp_stal_y - tool_stal_y
+        dz = tp_stal_z - tool_stal_z
+        
+        return x - dx, y - dy, z - dz
+    
+    
     def calcAbsoluteTopZ(self):
         [x, y, z] = self.getSavedSlotCenter()
         return z - self.max_height

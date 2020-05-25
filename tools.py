@@ -15,7 +15,7 @@ import low_level_comm as llc
 import param
 import racks
 
-SPEED_Z_MOVING_DOWN = 8000 # Robot can move down much faster than up.
+SPEED_Z_MOVING_DOWN = 4000 # Robot can move down much faster than up.
 
 default_slot = {
     "LT": [-1, -1], 
@@ -125,6 +125,10 @@ class tool(llc.serial_device):
                     self.config['calibration']['z_position_for_Y_axis_calibration'])
             self.immobile_probe_calibration_points['raise_z'] = float(
                     self.config['calibration']['raise_z_to_move_over_the_probe'])
+            self.immobile_probe_calibration_points['dx_Z'] = float(
+                    self.config['calibration']['delta_x_position_for_Z_axis_calibration'])
+            self.immobile_probe_calibration_points['dy_Z'] = float(
+                    self.config['calibration']['delta_y_position_for_Z_axis_calibration'])
         except:
             pass
         
@@ -472,8 +476,24 @@ class mobile_tool(tool):
         if z > z_safe:  
             self.robot.move(z=z_safe)
         self.robot.move(x=x, y=y)
+        
+    def getToRackCenter(self, rack, z_above_the_top=10):
+        """
+        Moves the robot towards the center of the specified rack, only X and Y; 
+        Z may be rizen if determined as too low; but not lowered.
+        """
+        # Current Z position
+        z = self.robot.getAxisPosition(axis='z')
+        
+        # Finding coordinates of the center of the rack, using all the calibrations
+        x, y, z_working = rack.calcRackCenterFullCalibration(tool=self)
+        
+        z_safe = z_working - z_above_the_top
+        if z > z_safe:  
+            self.robot.move(z=z_safe)
+        self.robot.move(x=x, y=y)
+        
     
-
 class pipettor(mobile_tool):
 
     def __init__ (self, robot, tool_name, 
@@ -488,6 +508,12 @@ class pipettor(mobile_tool):
         self.tip_added_z_length = float(self.config['geometry']['tip_added_length'])
         # Maximum volume to pipette
         self.max_allowed_vol = float(self.config['pipetting']['max_volume'])
+        # Plunger slack compensation volume
+        # After uptaking a liquid, the pipette will release this volume of the liquid to the same tube
+        try:
+            self.plunger_slack_compensation_volume = float(self.config['pipetting']['plunger_slack_compensation_volume'])
+        except:
+            self.plunger_slack_compensation_volume = 0
         
         # Switch indicating whether tip is attached or not.
         self.tip_attached = False
@@ -985,11 +1011,12 @@ class pipettor(mobile_tool):
     
     
     def distributeLiquid(self, sample_origin, sample_destination_list, vol_list, raise_z=None,
+                         raise_z_between_wells = None,
                          uptake_delay=0, release_delay=0, immerse_vol_origin=None,
                          immerse_volume_destination=None, touch_wall=False):
         """
         Takes liquid from one place and pipettes it into several samples sequentially, 
-        according to instructions
+        according to the provided instructions
         """
         # Represents current volume of liquit inside pipettor's tip
         vol_in_tip = 0
@@ -1005,6 +1032,9 @@ class pipettor(mobile_tool):
             # Checking if tip has enough liquid in it
             # If not, taking liquid from sample of origin
             if vol_in_tip < volume:
+                # Raising Z axis before moving to the origin sample
+                if raise_z is not None:
+                    self.robot.move(z=raise_z)
                 # Moving to the sample origin
                 self.getToSample(sample=sample_origin)
                 # Plunger all the way down, to remove all liquid that may remain in 
@@ -1017,18 +1047,32 @@ class pipettor(mobile_tool):
                 self.getToSample(sample=sample_origin)
                 # Figuring out how much liquid to uptake
                 if remaining_vol_to_move > self.max_allowed_vol:
-                    vol_to_uptake = self.max_allowed_vol
+                    vol_to_uptake = self.max_allowed_vol + self.plunger_slack_compensation_volume
                 else:
-                    vol_to_uptake = remaining_vol_to_move
+                    vol_to_uptake = remaining_vol_to_move + self.plunger_slack_compensation_volume
                 # Actually uptaking liquid
                 self.uptakeLiquid(sample=sample_origin, volume=vol_to_uptake,
                                   uptake_delay=uptake_delay)
                 vol_in_tip = vol_to_uptake
+                # Dispensing a little of liquid back to the origin tube to 
+                # compensate for the plunger movement slack
+                self.dispenseLiquid(sample=sample_origin, volume=self.plunger_slack_compensation_volume,
+                    release_delay=release_delay, plunger_retract=False)
+                vol_in_tip = vol_in_tip - self.plunger_slack_compensation_volume
                 # Resetting absolute position every time tip is refilled
-                vol_to_move_plunger = volume
-            # Raising Z level, to prevent the case when robot would hit something on its way
-            if raise_z is not None:
-                self.robot.move(z=raise_z)
+                vol_to_move_plunger = volume + self.plunger_slack_compensation_volume
+                # Touching the liquid to remove droplet
+                curr_sample_vol = sample_origin.getVolume()
+                z_immerse = sample_origin.sampleVolToZ(volume=curr_sample_vol, tool=self)
+                self.robot.move(z=z_immerse)
+                # Raising Z axis after uptaking liquid, to move towards destination sample
+                if raise_z is not None:
+                    self.robot.move(z=raise_z)
+                # Moving towards destination sample
+                self.getToSample(sample=sample_destination)
+            # Adjusting Z level between destination samples
+            if raise_z_between_wells is not None:
+                self.robot.move(z=raise_z_between_wells)
             # Now pipetting liquid into the next destination
             # Take care not to retract plunger
             self.dispenseLiquid(sample=sample_destination, volume=vol_to_move_plunger, 
@@ -1415,14 +1459,15 @@ class mobile_gripper(mobile_tool):
         self.sample = None
 
     @classmethod
-    def getTool(cls, robot):
+    def getTool(cls, robot, tool_name="mobile_gripper", rack_type='mobile_gripper_rack',
+            welcome_message="mobile gripper"):
         """
         Get touch probe from its saved position and initializes the object
         """
-        cls.tool_name = "mobile_gripper"
-        cls.welcome_message="mobile gripper"
+        cls.tool_name = tool_name
+        cls.welcome_message=welcome_message
         return super().getTool(robot, 
-            tool_name="mobile_gripper", welcome_message="mobile gripper", rack_type='mobile_gripper_rack')
+            tool_name=tool_name, welcome_message=welcome_message, rack_type=rack_type)
 
     def powerUp(self):
         self.writeAndWait("P on", confirm_message='\r\n')
@@ -1467,11 +1512,33 @@ class mobile_gripper(mobile_tool):
         # Saving slope and intercept parameters
         self.save()
 
-    def grabSample(self, sample, vol_to_grab=None, 
+    def grabSample(self, sample, vol_to_grab=None, dz_to_grab=None,
                    man_open_diam=None, man_grip_diam=None, powerdown=False,
                    extra_retraction_dz=20):
         """
         Grabs a specified sample
+        Inputs
+            sample  
+                object of sample class, provides parameters necessary to interact with the sample
+            vol_to_grab
+                This is the volume level at which function will grab the sample
+                If not provided, then maximum volume level will be used
+            dz_to_grab
+                Level relative to the top of the sample, at which function will grab the sample
+                If not provided, maximum volume level will be used
+            man_open_diam
+                Allows to specify diameter to open gripper.
+                If not provided, sample settings will be used
+            man_grip_diam
+                Allows to specify diameter to grab the sample
+                If not provided, sample settings will be used
+            powerdown
+                If True value is set, servo power will be off after grabbing sample
+                Default is False
+            extra_retraction_dz
+                Allows to set how much more to lift the sample after grabbing, 
+                in addition to the sample settings
+                Default is 20 mm
         """
         # Moving robot towards the sample
         self.getToSample(sample=sample)
@@ -1486,14 +1553,27 @@ class mobile_gripper(mobile_tool):
         self.toDiameter(diameter=open_diam, powerdown=powerdown)
         
         # Moving gripper down to grab
-        if vol_to_grab is None:
+        if dz_to_grab is not None:
+            z_grab = sample.sampleRelativeZtoAbsoluteZ(dZ=dz_to_grab, tool=self)
+        elif vol_to_grab is not None:
+            z_grab = sample.sampleVolToZ(volume=vol_to_grab, tool=self)
+        else:
             max_vol = sample.getMaxVolume()
             fraction_vol_to_grab = max_vol * 0
             # Currently gripper will be immersed to 0% of the volume
             # For example, if volume is 50 uL, then gripping will happend at 50 uL position.
             # TODO: make it so user can specify percent themselves.
             vol_to_grab = max_vol - fraction_vol_to_grab
-        z_grab = sample.sampleVolToZ(volume=vol_to_grab, tool=self)
+            z_grab = sample.sampleVolToZ(volume=vol_to_grab, tool=self)
+            
+#        if vol_to_grab is None:
+#            max_vol = sample.getMaxVolume()
+#            fraction_vol_to_grab = max_vol * 0
+#            # Currently gripper will be immersed to 0% of the volume
+#            # For example, if volume is 50 uL, then gripping will happend at 50 uL position.
+#            # TODO: make it so user can specify percent themselves.
+#            vol_to_grab = max_vol - fraction_vol_to_grab
+#        z_grab = sample.sampleVolToZ(volume=vol_to_grab, tool=self)
         self.robot.move(z=z_grab)
         
         # Actually grabbing the tube
@@ -1580,7 +1660,44 @@ class mobile_gripper(mobile_tool):
         self.robot.moveAxisDelta(axis='z', value=-retract)
         
         return sample
-            
+    
+    
+    def placePlate(self, rack, man_open_diam=None, powerdown=True, retract=20, dz=0):
+        """
+        Places the plate that is currently grabbed into the rack.
+        This function assumes that the plate geometry matches rack (96 wells plate -> 96 wells rack)
+        """
+        # Moving X and Y to the rack position
+        self.getToRackCenter(rack=rack)
+        x, y, z = rack.calcRackCenterFullCalibration(tool=self)
+        # "Placing" to the new rack
+        self.sample.place(rack)
+        # Calculating Z to which to lower the sample 
+        # Sample now has parameters of the destination rack and place
+        rack_depth = self.sample.length - self.sample.getSampleHeightAboveRack()
+        z_final = z + rack_depth + dz
+        self.robot.move(z=z_final)
+        # Opening gripper
+        if man_open_diam is not None:
+            open_diam = man_open_diam
+        elif self.sample.isCapped():
+            # TODO: add procedures for capped samples
+            pass
+        else:
+            open_diam = self.sample.getUncappedGrippingOpenDiam()
+        self.toDiameter(diameter=open_diam, powerdown=powerdown)
+        # Making sample not in gripper
+        self.sample.disengage()
+        self.gripper_has_something = False
+        self.added_z_length = 0
+        sample = self.sample
+        self.sample = None
+        
+        # Retracting
+        self.robot.moveAxisDelta(axis='z', value=-retract)
+        
+        return sample
+        
     
     def pushSample(self, sample, man_open_diam=None, powerdown=True, dz=0):
         """

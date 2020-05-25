@@ -487,55 +487,57 @@ class tool_test_case(unittest.TestCase):
 # TODO: Those functions are probably blocked by homing
 # TODO: Mock homing somehow
 
-#    @mock.patch('cartesian.arnie')
-#    @mock.patch('tools.llc.serial_device.readAll')
-#    @mock.patch('tools.llc.serial.Serial') 
-#    def test__pipettor__init__(self, mock_serialdev, mock_readAll, mock_cartesian):
-#        mock_readAll.return_value = "Servo"
-#        ar = cartesian.arnie('COM1', 'COM2')
-#        p1000 = tools.pipettor(robot=ar, com_port_number='COM3', tool_name='p1000_tool')
-#        mock_readAll.assert_called()
-#        self.assertEqual(p1000.actual_welcome_message, 
-#                "Servo")
-#        mock_cartesian.assert_called()
-#        mock_serialdev.assert_called()
-#        mock_serialdev.assert_called_with('COM3', 115200, timeout=0.1)
-#
-#
-#
-#    @mock.patch('cartesian.arnie')
-#    @mock.patch('tools.llc.serial_device.readAll')
-#    @mock.patch('tools.llc.serial.Serial') 
-#    def test__pipettor__getTool(self, 
-#                mock_serialdev, mock_readAll, mock_cartesian):
-#        """
-#        If coordinates are not matched, then library for some reason
-#        not loading json file, and using probably slot calibration data instead.
-#        """
-#        
-#        with open('p1000_tool_rack.json', 'r') as f:
-#            saved_dict = json.loads(f.read())
-#        x, y, z = saved_dict['position']
-#
-#        config = configparser.ConfigParser()
-#        config_path = 'configs/pipette_rack.ini'
-#        config.read(config_path)            
-#        z_working_height = float(config['geometry']['z_working_height'])
-#        z_height = float(config['geometry']['z_box_height'])
-#        z_pickup = z - z_working_height
-#        
-#        # Setting mocks        
-#        mock_readAll.return_value = "Servo"
-#        
-#        # Initializing
-#        ar = cartesian.arnie('COM1', 'COM2')
-#        ar.getToolAtCoord = mock.MagicMock()
-#        serial_device = llc.serial_device('COM3')
-#        p1000_tool = tools.pipettor.getTool(robot=ar, tool_name='p1000_tool')
-#        
-#        # Testing
-#        ar.getToolAtCoord.assert_called_with(x, y, z_pickup, z_init=0, speed_xy=None, speed_z=None)
-#
+    @mock.patch('cartesian.arnie')
+    @mock.patch('tools.llc.serial_device.readAll')
+    @mock.patch('tools.llc.serial.Serial') 
+    @mock.patch('tools.pipettor.home')
+    def test__pipettor__init__(self, mock_home, mock_serialdev, mock_readAll, mock_cartesian):
+        mock_readAll.return_value = "Servo"
+        ar = cartesian.arnie('COM1', 'COM2')        
+        p1000 = tools.pipettor(robot=ar, com_port_number='COM3', tool_name='p1000_tool')
+        mock_readAll.assert_called()
+        self.assertEqual(p1000.actual_welcome_message, 
+                "Servo")
+        mock_cartesian.assert_called()
+        mock_serialdev.assert_called()
+        mock_serialdev.assert_called_with('COM3', 115200, timeout=0.1)
+        mock_home.assert_called()
+
+
+    @mock.patch('cartesian.arnie')
+    @mock.patch('tools.llc.serial_device.readAll')
+    @mock.patch('tools.llc.serial.Serial') 
+    @mock.patch('tools.pipettor.home')
+    def test__pipettor__getTool(self, 
+                mock_home, mock_serialdev, mock_readAll, mock_cartesian):
+        """
+        If coordinates are not matched, then library for some reason
+        not loading json file, and using probably slot calibration data instead.
+        """
+        
+        with open('p1000_tool_rack.json', 'r') as f:
+            saved_dict = json.loads(f.read())
+        x, y, z = saved_dict['position']
+
+        config = configparser.ConfigParser()
+        config_path = 'configs/pipette_rack.ini'
+        config.read(config_path)            
+        z_working_height = float(config['geometry']['z_working_height'])
+        z_height = float(config['geometry']['z_box_height'])
+        z_pickup = z - z_working_height
+        
+        # Setting mocks        
+        mock_readAll.return_value = "Servo"
+        
+        # Initializing
+        ar = cartesian.arnie('COM1', 'COM2')
+        ar.getToolAtCoord = mock.MagicMock()
+        serial_device = llc.serial_device('COM3')
+        p1000_tool = tools.pipettor.getTool(robot=ar, tool_name='p1000_tool')
+        
+        # Testing
+        ar.getToolAtCoord.assert_called_with(x, y, z_pickup, z_init=0, speed_xy=None, speed_z=None)
+
 
 
 # ======================================================================================

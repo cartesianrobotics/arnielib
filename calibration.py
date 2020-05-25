@@ -420,6 +420,10 @@ def calibrateToolCustomPoints(tool, stationary_probe):
     y_Yrear = tool.immobile_probe_calibration_points['y_Yrear']
     z_Y = tool.immobile_probe_calibration_points['z_Y']
     
+    # Unpacking parameters for Z calibration
+    dx_Z = tool.immobile_probe_calibration_points['dx_Z']
+    dy_Z = tool.immobile_probe_calibration_points['dy_Z']
+    
     # Acquiring and calculating Z coordinate height
     # Accounting for the fact that tools are of different length than a mobile touch probe
     # (which is considered standard)
@@ -452,8 +456,9 @@ def calibrateToolCustomPoints(tool, stationary_probe):
     # To XY position for Y calibration
     ar.move(x=x_Y, y=y_Yfrontal)
     # Down
-    ar.moveAxisDelta(axis='z', value=raise_z)
-
+    #ar.moveAxisDelta(axis='z', value=raise_z)
+    ar.move(z=z_Y)
+    
     # Finding center by Y
     dist_through_obstruct = y_Yrear - y_Yfrontal
     center_y = stationary_probe.findCenterOuter(axis='y', raise_height=raise_z,
@@ -463,7 +468,8 @@ def calibrateToolCustomPoints(tool, stationary_probe):
     # Up
     ar.moveAxisDelta(axis='z', value=-raise_z)
     # To Z calibration point using recently discovered coordinates of the center of the rack.
-    ar.move(x=center_x, y=center_y)
+    # Adding possible shift for the case that the tool is calibrated not at its center
+    ar.move(x=center_x+dx_Z, y=center_y+dy_Z)
     
     # Finding Z height
     z = stationary_probe.findWall(axis='z', direction=1)

@@ -199,27 +199,29 @@ class racks_test_case(unittest.TestCase):
         
         
     def test_calcWorkingPosition(self):
-        p1000 = racks.rack(rack_name="p1000_1", rack_data={'n_x':0, 'n_y':2, 'type': 'p1000_tips'})
-        p1000.updateCenter(x=100, y=200, z=600, x_btm_touch=90, y_btm_touch=66, z_btm_touch=500)
+        p1000_rack = racks.rack(
+            rack_name="p1000_1_test", 
+            rack_data={'n_x':0, 'n_y':2, 'type': 'p1000_tips'})
+        p1000_rack.updateCenter(x=100, y=200, z=600, x_btm_touch=90, y_btm_touch=66, z_btm_touch=500)
+        p1000_rack.z_working_height = 0
+        
+        # Making sure the rack center outpit is consistent with the input
+        self.assertEqual(600, p1000_rack.getCalibratedRackCenter()[2])
         
         # Mock class to provide tool calibration data
         class tool():
-            def __init__(self):
-                self.immob_probe_x = 91
-                self.immob_probe_y = 65
-                self.immob_probe_z = 400
-                
-                self.tool_data = {}
-                #self.tool_data['pos_stalagmyte'] = [91, 65, 400]
+            
+            def getStalagmyteCoord(self):
+                return [91, 65, 400]
         tool = tool()
         
         # not corrected coordinates
-        x_nc, y_nc = p1000.calcWellXY(well_col=0, well_row=0)
-        x_slot, y_slot, z_calibr = p1000.getCalibratedRackCenter()
-        z_nc = z_calibr - p1000.z_working_height
+        x_nc, y_nc = p1000_rack.calcWellXY(well_col=0, well_row=0)
+        x_slot, y_slot, z_calibr = p1000_rack.getCalibratedRackCenter()
+        z_nc = z_calibr - p1000_rack.z_working_height
         
         # corrected coordinates
-        x_corr, y_corr, z_corr = p1000.calcWorkingPosition(well_col=0, well_row=0, tool=tool)
+        x_corr, y_corr, z_corr = p1000_rack.calcWorkingPosition(well_col=0, well_row=0, tool=tool)
         
         self.assertEqual(x_corr-x_nc, 1)
         self.assertEqual(y_corr-y_nc, -1)
@@ -229,6 +231,7 @@ class racks_test_case(unittest.TestCase):
     def test_calcWorkingPosition_NoToolProvided(self):
         p1000 = racks.rack(rack_name="p1000_1", rack_data={'n_x':0, 'n_y':2, 'type': 'p1000_tips'})
         p1000.updateCenter(x=100, y=200, z=600, x_btm_touch=90, y_btm_touch=66, z_btm_touch=500)
+        p1000.z_working_height = 0
         
         # not corrected coordinates
         x_nc, y_nc = p1000.calcWellXY(well_col=0, well_row=0)
@@ -246,6 +249,7 @@ class racks_test_case(unittest.TestCase):
     def test_calcWorkingPosition_noStalagmyteDataProvided(self):
         p1000 = racks.rack(rack_name="p1000_1", rack_data={'n_x':0, 'n_y':2, 'type': 'p1000_tips'})
         p1000.rack_data['position'] = [100,200,600]
+        p1000.z_working_height = 0
         
         # Mock class to provide tool calibration data
         class tool():

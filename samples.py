@@ -172,7 +172,20 @@ class sample():
         z = z_sample_0 + z_tube_insert
         return z
 
-
+    
+    def sampleRelativeZtoAbsoluteZ(self, dZ, tool):
+        """
+        Calculates absolute Z value based on provided dZ value relative to the 
+        sample top.
+        For example, if the sample top is positioned at 500, and dZ = 20,
+        then function returns 520; at this absolute height, the distance between
+        the top of the sample and the tool's calibrated point will be 20 mm.
+        """
+        z = getSampleTopZ(tool=tool)
+        new_z = z + dZ
+        return new_z
+    
+    
     def getSampleCenterXY(self, tool):
         rack = self.sample_data['rack']
         x, y, z = rack.calcWorkingPosition(self.sample_data['x_well'],
@@ -180,7 +193,7 @@ class sample():
                                            tool)
         return x, y
         
-        
+    # TODO: refactor samplePercentToZ, sampleVolToZ and others that may reapeat the code
     def getSampleTopZ(self, tool):
         """
         Returns absolute coordinate of the top of the sample
@@ -291,18 +304,23 @@ class plate():
         self.dist_cntr_to_1st_row = float(config['wells']['distance_center_to_1st_row'])
 
         self.samples_list = self._initSamples(plate_name, plate_type)
+        # Use length of an individual well as a length of the plate
+        self.length = self._getZeroSample().length
         
     def _initSamples(self, plate_name, plate_type):
         samples_list = []
         for col in range(self.columns):
             for row in range(self.rows):
                 s_name = plate_name + '_col_' + str(col) + '_row_' + str(row)
-                s = samples.sample(sample_name=s_name, sample_type=plate_type+'_well')
+                s = sample(sample_name=s_name, sample_type=plate_type+'_well')
                 # Setting a position of a sample
                 s.sample_data['x_well'] = col
                 s.sample_data['y_well'] = row
                 samples_list.append(s)
         return samples_list
+    
+    def _getZeroSample(self):
+        return self.getSample(0, 0)
     
     def getSample(self, column, row):
         for s in self.samples_list:
@@ -335,3 +353,99 @@ class plate():
         sample_list = self.getAllSamples()
         for s in sample_list:
             s.sample_data['rack'] = rack
+
+            
+    def getSampleCenterXY(self, tool):
+        """
+        Obtain X and Y coordinates of the center of the plate
+        """
+        rack = self.plate_data['rack']
+        x, y, z = rack.calcRackCenterFullCalibration(tool)
+        return x, y
+
+    
+    def getSampleTopZ(self, tool):
+        """
+        Returns absolute Z coordinate of the top of the plate
+        """
+        return self._getZeroSample().getSampleTopZ(tool)
+
+        
+    def getMaxVolume(self):
+        """
+        Returns maximum volume of an individual well
+        """
+        return self._getZeroSample().getMaxVolume()
+
+        
+    def sampleVolToZ(self, volume, tool):
+        """
+        Calculates Z at which the end of the tool will be at 
+        the level of the sample which corresponds to provided volume
+        """
+        
+        return self._getZeroSample().sampleVolToZ(volume, tool)
+        
+
+    def sampleDepthToZ(self, height, tool):
+        """
+        Moves the tool to a given height, relative to the top of the sample.
+        Larger the height value, the deeper tool will be inserted
+        """
+        return self._getZeroSample().sampleDepthToZ(height, tool)
+
+
+    def getDepthFromVolume(self, volume):
+        """
+        Calculates distance from the top of the sample to the 
+        position of certain volume.
+        """
+        return self._getZeroSample().getDepthFromVolume(volume)
+
+
+    def samplePercentToZ(self, fraction, tool):
+        """
+        Calculate Z at which the end of the tool will be, corresponding
+        to percent of sample height
+        """
+        return self._getZeroSample().samplePercentToZ(fraction, tool)
+
+
+    def sampleRelativeZtoAbsoluteZ(self, dZ, tool):
+        """
+        Calculates absolute Z value based on provided dZ value relative to the 
+        sample top.
+        For example, if the sample top is positioned at 500, and dZ = 20,
+        then function returns 520; at this absolute height, the distance between
+        the top of the sample and the tool's calibrated point will be 20 mm.
+        """
+        return self._getZeroSample().sampleRelativeZtoAbsoluteZ(dZ, tool)
+        
+    def setSampleEngagedPosition(self, dz):
+        zs = self._getZeroSample()
+        zs.setSampleEngagedPosition(dz)
+        
+    def getSampleRemainingLength(self, dz):
+        """
+        Returns remaining length of sample below given relative z.
+        Inputs:
+            dz 
+                in mm, distance from top of the sample
+        Returns:
+            z_remaining
+                in mm, distance from dz to the very bottom of the sample
+                (not 0 volume mark, but the very bottom)
+        """
+        
+        return self._getZeroSample().length - dz    
+
+    def getSampleHeightAboveRack(self):
+        """
+        Returns arbitrary height of sample above the rack where it is 
+        currently placed (in mm).
+        """
+        return self._getZeroSample().getSampleHeightAboveRack()      
+        
+        
+    def disengage(self):
+        self._getZeroSample().sample_engaged_dz = None
