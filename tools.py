@@ -434,6 +434,12 @@ class mobile_tool(tool):
             pass
         self.robot.returnToolToCoord(x, y, z, z_init=z_init, speed_xy=speed_xy, speed_z=speed_z)
     
+    
+    def _protectiveZMove(self, z_current, z_safe, movement_allowed):
+        if z_current > z_safe and movement_allowed:
+            self.robot.move(z=z_safe)
+        return self.robot.getAxisPosition(axis='z')
+
 
     def getToSample(self, sample, z_above_the_top=10, move_z=True):
         """
@@ -458,8 +464,7 @@ class mobile_tool(tool):
         z_safe = z_sample_top - z_above_the_top
         # If the end of the tool is lower than safe Z coordinate, raise Z gantry
         # Higher z value, lower the gantry is.
-        if z > z_safe and move_z:
-            self.robot.move(z=z_safe)
+        self._protectiveZMove(z, z_safe, move_z)
         # Moving to the sample position
         x, y = sample.getSampleCenterXY(self)
         self.robot.move(x=x, y=y)
@@ -473,8 +478,7 @@ class mobile_tool(tool):
         
         x, y, z_working = rack.calcWorkingPosition(well_col=column, well_row=row, tool=self)
         z_safe = z_working - z_above_the_top
-        if z > z_safe:  
-            self.robot.move(z=z_safe)
+        self._protectiveZMove(z, z_safe, True)
         self.robot.move(x=x, y=y)
         
     def getToRackCenter(self, rack, z_above_the_top=10):
@@ -489,8 +493,7 @@ class mobile_tool(tool):
         x, y, z_working = rack.calcRackCenterFullCalibration(tool=self)
         
         z_safe = z_working - z_above_the_top
-        if z > z_safe:  
-            self.robot.move(z=z_safe)
+        self._protectiveZMove(z, z_safe, True)
         self.robot.move(x=x, y=y)
         
     
@@ -1773,8 +1776,86 @@ class mobile_gripper(mobile_tool):
         else:
             return self.immob_probe_x, self.immob_probe_y, self.immob_probe_z
 
-        
 
+    
+    def grabRack(self, rack, man_open_diam=None, man_close_diam=None, extra_retraction_dz=0,
+                 powerdown=False, test=False):
+        """
+        Grabs a rack
+        """
+        
+        self.getToRackCenter(rack)
+        # Open gripper
+        if man_open_diam is not None:
+            open_diam = man_open_diam
+        else:
+            open_diam = rack.getGrippingOpenDiam(tool=self)
+        self.toDiameter(diameter=open_diam, powerdown=powerdown)
+        # Moving down to grabbing height
+        z_grab = rack.getGrippingHeight(tool=self)
+        self.robot.move(z=z_grab)
+        # Closing gripper
+        if man_close_diam is not None:
+            close_diam = man_close_diam
+        else:
+            close_diam = rack.getGrippingCloseDiam(tool=self)
+        # Temporary storing sample object in the tool, as it will be used
+        # to calculate parameters to place it somewhere.
+        self.sample = rack
+        self.gripper_has_something = True
+        self.added_z_length = rack.getHeightBelowGripper(tool=self)
+        # Calculating retraction height. It will be same as z_grab,
+        # but now getGrippingHeight will account for added_z_length and extra_retraction_dz
+        z_retract = rack.getGrippingHeight(tool=self) - extra_retraction_dz
+        self.robot.move(z=z_retract)
+        if test:
+            param_dict = {}
+            param_dict['open_diam'] = open_diam
+            param_dict['z_grab'] = z_grab
+            param_dict['close_diam'] = close_diam
+            param_dict['z_retract'] = z_retract
+            return param_dict
+    
+    
+    def placeRack(self, destination_rack, man_open_diam=None, dz=0, retract=20, powerdown=False, test=False):
+        """
+        Places the rack that is currently grabbed in the gripper into the specified position.
+        """
+        # Moving X and Y to the rack position
+        self.getToRackCenter(rack=destination_rack)
+        x, y, z = destination_rack.calcRackCenterFullCalibration(tool=self)
+        # "Placing" to the new rack
+        self.sample.place(destination_rack)
+        # Calculating Z to which to lower the sample 
+        # Sample now has parameters of the destination rack and place
+        z_final = z + destination_rack.max_height + dz
+        self.robot.move(z=z_final)
+         # Opening gripper
+        if man_open_diam is not None:
+            open_diam = man_open_diam
+        else:
+            open_diam = self.sample.getGrippingOpenDiam(tool=self)
+        self.toDiameter(diameter=open_diam, powerdown=powerdown)
+        # Sample is no longer is the gripper. Changing gripper object properties accordingly
+        self.sample.disengage()
+        self.gripper_has_something = False
+        self.added_z_length = 0
+        placed_rack = self.sample
+        self.sample = None
+        
+        # Retracting
+        self.robot.moveAxisDelta(axis='z', value=-retract)
+        
+        if test:
+            param_dict = {}
+            param_dict['destination_coord'] = (x, y, z)
+            param_dict['rack_heigth'] = destination_rack.max_height
+            param_dict['z_final_absolute'] = z_final
+            param_dict['open_diam'] = open_diam
+            return placed_rack, param_dict
+        else:
+            return placed_rack
+        
 
 device_type_descriptions = [
     {"class": cart.arnie, "message": "Marlin", "type": "", "mobile": False}, 

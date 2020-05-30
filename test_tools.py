@@ -6,6 +6,8 @@ import mock
 import cartesian
 import low_level_comm as llc
 import configparser
+import racks
+import calibration
 
 
 class tool_test_case(unittest.TestCase):
@@ -332,6 +334,27 @@ class tool_test_case(unittest.TestCase):
         
         ar.returnToolToCoord.assert_called_with(50, 66, 450, z_init=0, speed_xy=None, speed_z=None)
 
+    @mock.patch('cartesian.arnie')
+    @mock.patch('tools.llc.serial_device.readAll')
+    @mock.patch('tools.llc.serial.Serial') 
+    def test__getStalagmyteCoord(self, mock_serialdev, mock_readAll, mock_cartesian):
+        mock_readAll.return_value = "Welcome returned from the device"
+        ar = cartesian.arnie('COM1', 'COM2')
+        generic_tool = tools.mobile_tool.getToolAtCoord(robot=ar, 
+                x=50, y=66, z=450, z_init=0, speed_xy=2000, speed_z=3000, 
+                welcome_message='welcome', tool_name='generic_tool')
+        
+        # A tool only gets stalagmyte coordinates after its calibration procedure.
+        # The coordinates are not saved, as every time the tool is picked up, 
+        # the coordinates will be slightly different (as this is the point)
+        # Calibration function calls tool.setStalagmyteCoord(center_x, center_y, z)
+        # at the end.
+        generic_tool.setStalagmyteCoord(200, 100, 500)
+        x, y, z = generic_tool.getStalagmyteCoord()
+        self.assertEqual(x, 200)
+        self.assertEqual(y, 100)
+        self.assertEqual(z, 500)
+        
 
 
 # ======================================================================================
@@ -539,6 +562,152 @@ class tool_test_case(unittest.TestCase):
         ar.getToolAtCoord.assert_called_with(x, y, z_pickup, z_init=0, speed_xy=None, speed_z=None)
 
 
+
+# ======================================================================================
+# Mobile gripper tool
+# ======================================================================================
+
+    @mock.patch('cartesian.arnie')
+    @mock.patch('tools.llc.serial_device.readAll')
+    @mock.patch('tools.llc.serial.Serial') 
+    def test__mobile_gripper__init__(self, mock_serialdev, mock_readAll, mock_cartesian):
+        mock_readAll.return_value = "mobile gripper"
+        ar = cartesian.arnie('COM1', 'COM2')        
+        gr = tools.mobile_gripper(robot=ar, com_port_number='COM3', tool_name='mobile_gripper')
+        mock_readAll.assert_called()
+        self.assertEqual(gr.actual_welcome_message, 
+                "mobile gripper")
+        mock_cartesian.assert_called()
+        mock_serialdev.assert_called()
+        mock_serialdev.assert_called_with('COM3', 115200, timeout=0.1)
+
+    
+    @mock.patch('cartesian.arnie')
+    @mock.patch('tools.llc.serial_device.readAll')
+    @mock.patch('tools.llc.serial.Serial') 
+    @mock.patch('tools.racks.rack')
+    def test__mobile_gripper__grabRack__mockRack(self, 
+            mock_rack, mock_serialdev, mock_readAll, mock_cartesian):
+        # Defining all mock values and parameters for gripper
+        mock_readAll.return_value = "mobile gripper"
+        ar = cartesian.arnie('COM1', 'COM2')        
+        gr = tools.mobile_gripper(robot=ar, com_port_number='COM3', tool_name='mobile_gripper')
+        gr.operateGripper = mock.MagicMock()
+        gr.getToRackCenter = mock.MagicMock()
+        # Mocking rack functions and outputs:
+        mock_rack.getGrippingOpenDiam.return_value = 90
+        mock_rack.getGrippingHeight.return_value = 550
+        mock_rack.getGrippingCloseDiam.return_value = 80
+        mock_rack.getHeightBelowGripper.return_value = 20
+        
+        # Calling function to see if errors appear
+        gr.grabRack(mock_rack)
+        # Checking gripper instance parameters changed
+        self.assertEqual(gr.sample, mock_rack)
+        self.assertEqual(gr.gripper_has_something, True)
+        self.assertEqual(gr.added_z_length, 20)
+        # Testing correctness of the default settings
+        param_dict = gr.grabRack(mock_rack, test=True)
+        self.assertEqual(param_dict['open_diam'], 90)
+        self.assertEqual(param_dict['close_diam'], 80)
+        self.assertEqual(param_dict['z_grab'], 550)
+        self.assertEqual(param_dict['z_retract'], 550)
+        param_dict = gr.grabRack(mock_rack, man_open_diam=95, test=True)
+        self.assertEqual(param_dict['open_diam'], 95)
+        param_dict = gr.grabRack(mock_rack, man_close_diam=85, test=True)
+        self.assertEqual(param_dict['close_diam'], 85)
+        param_dict = gr.grabRack(mock_rack, extra_retraction_dz=10, test=True)
+        self.assertEqual(param_dict['z_retract'], 540)
+        
+        
+    @mock.patch('cartesian.arnie')
+    @mock.patch('tools.llc.serial_device.readAll')
+    @mock.patch('tools.llc.serial.Serial')
+    def test__mobile_gripper__grabRack(self, 
+            mock_serialdev, mock_readAll, mock_cartesian):
+        # Same as above, but using a real rack object
+        
+        # Defining all mock values and parameters for gripper
+        mock_readAll.return_value = "mobile gripper"
+        ar = cartesian.arnie('COM1', 'COM2')        
+        gr = tools.mobile_gripper(robot=ar, com_port_number='COM3', tool_name='mobile_gripper')
+        gr.operateGripper = mock.MagicMock()
+        gr.getToRackCenter = mock.MagicMock()
+        
+        # Emulating tool calibration
+        gr.setStalagmyteCoord(x=210, y=95, z=530)
+        
+        # Initializing a test rack
+        r = racks.rack(rack_name="p1000_1_test", 
+            rack_data={'n_x':0, 'n_y':2, 'type': 'p1000_tips'})
+        r.updateCenter(x=100, y=200, z=550, x_btm_touch=90, y_btm_touch=66, z_btm_touch=500)
+        #r.z_working_height = 0
+        r.setGrippingProperties(open_diam=90, grip_diam=80, z_relative_to_top=10, gripper=gr)
+        
+        self.assertEqual(gr.getStalagmyteCoord()[2], 530)
+        self.assertEqual(r.rack_data['pos_stalagmyte'][2], 500)
+        self.assertEqual(r.calcRackCenterFullCalibration(gr)[2], 550-8-500+530)
+        self.assertEqual(r.getGrippingHeight(gr), 550-8-500+530+10)
+        
+        # Calling function to see if errors appear
+        param_dict = gr.grabRack(r, test=True)
+        # Checking gripper instance parameters changed
+        self.assertEqual(gr.sample, r)
+        self.assertEqual(gr.gripper_has_something, True)
+        self.assertEqual(gr.added_z_length, 86)
+        # Testing correctness of the default settings
+        self.assertEqual(r.rack_data['position'][2], 550)
+        self.assertEqual(r.getCalibratedRackCenter()[2], 550)
+        self.assertEqual(r.z_working_height, -8)
+        self.assertEqual(gr.getStalagmyteCoord()[2], 530-86)
+        self.assertEqual(param_dict['open_diam'], 90)
+        self.assertEqual(param_dict['close_diam'], 80)
+        self.assertEqual(param_dict['z_grab'], 582)
+        self.assertEqual(param_dict['z_retract'], 582-86)
+
+        # Z calculations:
+        # z_grab = z_rack_full_calibrated + z_relative_to_top
+        # z_relative_to_top = 10
+        # z_rack_full_calibrated = z_calibrated_rack_center + z_working_height - tp_stal_z + tool_stal_z
+        # z_working_height = -8
+        # z_calibrated_rack_center = 550 (used updateCenter function)
+        # tp_stal_z = 500 (used updateCenter function)
+        # tool_stal_z = 530
+        # z_rack_full_calibrated = 550 - 8 - 500 + 530 = 572
+        # z_grab = 572 + 10 = 582
+
+    @mock.patch('tools.racks.rack')
+    @mock.patch('tools.racks.rack')
+    def test__mobile_gripper__placeRack_mocked_rack(self, mock_dest_rack, gripped_rack):
+        cartesian.arnie = mock.MagicMock()
+        tools.llc.serial_device.readAll = mock.MagicMock()
+        tools.llc.serial_device.readAll.return_value = "mobile gripper"
+        tools.llc.serial.Serial = mock.MagicMock()
+
+        ar = cartesian.arnie('COM1', 'COM2')
+        gr = tools.mobile_gripper(robot=ar, com_port_number='COM3', tool_name='mobile_gripper')
+        gr.operateGripper = mock.MagicMock()
+        gr.getToRackCenter = mock.MagicMock()
+        
+        gripped_rack.place = mock.MagicMock()
+        mock_dest_rack.max_height = 100
+        gripped_rack.getGrippingOpenDiam.return_value = 90
+        gr.sample = gripped_rack
+        
+        
+        mock_dest_rack.calcRackCenterFullCalibration.return_value = (600, 300, 550)
+        
+        placed_rack_object, param_dict = gr.placeRack(mock_dest_rack, test=True)
+        
+        self.assertEqual(gripped_rack, placed_rack_object)
+        self.assertEqual(param_dict['destination_coord'][0], 600)
+        self.assertEqual(param_dict['destination_coord'][1], 300)
+        self.assertEqual(param_dict['destination_coord'][2], 550)
+        self.assertEqual(param_dict['rack_heigth'], 100)
+        self.assertEqual(param_dict['z_final_absolute'], 550+100)
+        self.assertEqual(param_dict['open_diam'], 90)
+        
+        
 
 # ======================================================================================
 # Touch probe functions

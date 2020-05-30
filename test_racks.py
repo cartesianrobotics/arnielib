@@ -325,6 +325,141 @@ class racks_test_case(unittest.TestCase):
         self.assertEqual(
             r.z_calibration_dz, float(config['calibration']['z_calibration_dz']))
 
+
+    def test__getRackCenterFullCalibration(self):
+        r = racks.rack(rack_name='RackThatCannotBeNamed', rack_type='test_rack')
+        
+        r.rack_data['position'] = [400, 200, 500]
+        r.rack_data['pos_stalagmyte'] = [200, 100, 400]
+        
+        class tool():
+            def getStalagmyteCoord(self):
+                return [210, 95, 420]
+        mock_tool = tool()
+
+        x, y, z = r.calcRackCenterFullCalibration(mock_tool)
+        
+        self.assertEqual(x, 410)
+        self.assertEqual(y, 195)
+        self.assertEqual(z, 520)
+        
+
+
+    # Rack gripping functions
+    def test__getGrippingHeight(self):
+        
+        r = racks.rack(rack_name='RackThatCannotBeNamed', rack_type='test_rack')
+        
+        r.calcRackCenterFullCalibration = mock.MagicMock()
+        r.calcRackCenterFullCalibration.return_value = (200, 100, 500)
+        gripper_dict = {'test_gripper': {'z_grip': 20}}
+        r.rack_data['gripper'] = gripper_dict
+        
+        class tool():
+            def __init__(self):
+                self.tool_data = {}
+                self.tool_data['name'] = 'test_gripper'
+        mock_tool = tool()
+                
+        z = r.getGrippingHeight(tool=mock_tool)
+        self.assertEqual(z, 520)
+        z = r.getGrippingHeight(tool=mock_tool, extra_z=5)
+        self.assertEqual(z, 525)
+    
+    def test__getGrippingOpenDiam(self):
+        r = racks.rack(rack_name='RackThatCannotBeNamed', rack_type='test_rack')
+        
+        r.calcRackCenterFullCalibration = mock.MagicMock()
+        r.calcRackCenterFullCalibration.return_value = (200, 100, 500)
+        gripper_dict = {'test_gripper': {'open_diam': 90}}
+        r.rack_data['gripper'] = gripper_dict
+        
+        class tool():
+            def __init__(self):
+                self.tool_data = {}
+                self.tool_data['name'] = 'test_gripper'
+        mock_tool = tool()
+        
+        d = r.getGrippingOpenDiam(tool=mock_tool)
+        self.assertEqual(d, 90)
+
+    def test__getGrippingCloseDiam(self):
+        r = racks.rack(rack_name='RackThatCannotBeNamed', rack_type='test_rack')
+        
+        r.calcRackCenterFullCalibration = mock.MagicMock()
+        r.calcRackCenterFullCalibration.return_value = (200, 100, 500)
+        gripper_dict = {'test_gripper': {'grip_diam': 80}}
+        r.rack_data['gripper'] = gripper_dict
+        
+        class tool():
+            def __init__(self):
+                self.tool_data = {}
+                self.tool_data['name'] = 'test_gripper'
+        mock_tool = tool()
+        
+        d = r.getGrippingCloseDiam(tool=mock_tool)
+        self.assertEqual(d, 80)
+
+    
+    def test__setGrippingProperties(self):
+    
+        # Cleaning rack data file that may remain after previous manipulations
+        try:
+            os.remove('RackThatCannotBeNamed.json')
+        except:
+            pass
+            
+        r = racks.rack(rack_name='RackThatCannotBeNamed', rack_type='test_rack')
+        
+        self.assertFalse('gripper' in r.rack_data)
+        
+        class tool():
+            def __init__(self):
+                self.tool_data = {}
+                self.tool_data['name'] = 'test_gripper'
+        mock_tool = tool()
+        
+        r.setGrippingProperties(90, 80, 20, gripper=mock_tool)
+        
+        self.assertTrue('gripper' in r.rack_data)
+        self.assertTrue('test_gripper' in r.rack_data['gripper'])
+        self.assertTrue('open_diam' in r.rack_data['gripper']['test_gripper'])
+        self.assertTrue('grip_diam' in r.rack_data['gripper']['test_gripper'])
+        self.assertTrue('z_grip' in r.rack_data['gripper']['test_gripper'])
+        
+        del r
+        
+        # Repeating same checks to see if the data will be properly loaded
+        # from file
+        r = racks.rack(rack_name='RackThatCannotBeNamed', rack_type='test_rack')
+        self.assertTrue('gripper' in r.rack_data)
+        self.assertTrue('test_gripper' in r.rack_data['gripper'])
+        self.assertTrue('open_diam' in r.rack_data['gripper']['test_gripper'])
+        self.assertTrue('grip_diam' in r.rack_data['gripper']['test_gripper'])
+        self.assertTrue('z_grip' in r.rack_data['gripper']['test_gripper'])
+        
+        # Cleaning rack data file after manipulations
+        try:
+            os.remove('RackThatCannotBeNamed.json')
+        except:
+            pass
+
+
+    def test__getHeigthBelowGripper(self):
+        r = racks.rack(rack_name='RackThatCannotBeNamed', rack_type='test_rack')
+        gripper_dict = {'test_gripper': {'z_grip': 20}}
+        r.rack_data['gripper'] = gripper_dict
+        r.max_height = 100
+        
+        class tool():
+            def __init__(self):
+                self.tool_data = {}
+                self.tool_data['name'] = 'test_gripper'
+        mock_tool = tool()
+        
+        h = r.getHeightBelowGripper(tool=mock_tool)
+        self.assertEqual(h, 80)
+    
         
 if __name__ == '__main__':
     unittest.main()

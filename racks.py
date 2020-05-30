@@ -283,7 +283,16 @@ class rack():
         """
         [x, y, z] = self.getCalibratedRackCenter()
         z = z + self.z_working_height
-        tool_stal_x, tool_stal_y, tool_stal_z = tool.getStalagmyteCoord()
+        try:
+            tool_stal_x, tool_stal_y, tool_stal_z = tool.getStalagmyteCoord()
+        except:
+            # If function was unable to get stalagmyte coordinates from tool
+            # (will happen, for instance, whent the tool was not calibrated),
+            # print error message
+            print ("Unable to get stalagmyte coordinates from the tool")
+            print ("The tool was likely not calibrated")
+            print ("Perform tool calibration using tool.calibrateTool() and repeat")
+            return
         [tp_stal_x, tp_stal_y, tp_stal_z] = self.rack_data['pos_stalagmyte']
         
         dx = tp_stal_x - tool_stal_x
@@ -308,8 +317,114 @@ class rack():
         f = open(rack_name+'.json', 'w')
         f.write(json.dumps(self.rack_data))
         f.close()
+        
+    # ==================================================
+    # Gripping functions
+    
+    def setGrippingProperties(self, open_diam, grip_diam, z_relative_to_top, gripper=None, gripper_name=None):
+        """
+        Sets gripping properties for the rack, saves into properties file (json)
+        """
+        # Finding gripper name. It is used to label settings when stored
+        if gripper is None:
+            gripper_name = gripper_name
+        else:
+            gripper_name = gripper.tool_data['name']
+        
+        try:
+            gripper_dict = self.rack_data['gripper']
+        except:
+            gripper_dict = {}
+        
+        gripper_dict[gripper_name] = {
+            'open_diam': open_diam,
+            'grip_diam': grip_diam,
+            'z_grip': z_relative_to_top,
+        }
+        
+        self.rack_data['gripper'] = gripper_dict
+        self.save()
+        
+        
+    def getGrippingHeight(self, tool, extra_z=0):
+        """
+        Returns _absolute_ Z at which to perform gripping
+        """
+        gripper_name = tool.tool_data['name']
+        z_relative_to_top = self.rack_data['gripper'][gripper_name]['z_grip']
+        # calculating calibrated coordinates of the rack, accounting tool calibration
+        x, y, z = self.calcRackCenterFullCalibration(tool=tool)
+        z_abs = z + z_relative_to_top + extra_z
+        return z_abs
+    
+    def getGrippingOpenDiam(self, tool):
+        """
+        Returns number that indicates how wide a gripper should be opened so it 
+        can approach the rack to pick it up.
+        """
+        gripper_name = tool.tool_data['name']
+        open_diam = self.rack_data['gripper'][gripper_name]['open_diam']
+        return open_diam
+        
+    
+    def getGrippingCloseDiam(self, tool):
+        """
+        Returns number that indicates the width of the gripper to close to grab the rack
+        """
+        gripper_name = tool.tool_data['name']
+        grip_diam = self.rack_data['gripper'][gripper_name]['grip_diam']
+        return grip_diam
+        
+        
+    def getHeightBelowGripper(self, tool):
+        """
+        Returns distance from the bottom of the rack to the bottom of the gripping tool,
+        that is gripping on the rack.
+        """
+        gripper_name = tool.tool_data['name']
+        z_relative_to_top = self.rack_data['gripper'][gripper_name]['z_grip']
+        return self.max_height - z_relative_to_top
+        
+
+class stackable(rack):
+    """
+    Handles stackable racks, i.e., ones that can be stacked over each other
+    
+    There is a general need to place racks on top of each other. 
+    This class describes the behavior of such racks.
+    """
+    
+# TODO: create a unified class "item", that will be a parent
+# for all racks, samples, tools etc, handling common operations such as save/load parameters,
+# positions, calibration etc.
+
+class stack(object):
+    """
+    Handles a stack of racks
+    
+    Main functionality for stackable racks is to place a new rack on top,
+    know what is in the stack and extract necessary rack from the stack.
+    """
+    
+    def __init__ (self, name):
+        self.stack_data = self._loadParameters(name+'.json')
 
 
+    def _loadParameters(self, path):
+        """
+        Loads parameters of the stack from a file, using provided path
+        """
+        try:
+            filehandler = open(path, 'r')
+            result = json.loads(filehandler.read())
+            filehandler.close()
+        except FileNotFoundError:
+            return
+        
+        return result
+
+        
+    
 
 class consumables(rack):
     """
