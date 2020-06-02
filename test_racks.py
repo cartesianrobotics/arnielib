@@ -459,6 +459,85 @@ class racks_test_case(unittest.TestCase):
         
         h = r.getHeightBelowGripper(tool=mock_tool)
         self.assertEqual(h, 80)
+
+    def test__getStalagmyteCalibration(self):
+        r = racks.stackable(rack_name='RackThatCannotBeNamed', rack_type='test_rack')
+        # Simulating stalagmyte calibration data
+        r.rack_data['pos_stalagmyte'] = [200, 100, 400]
+        self.assertEqual(r.getStalagmyteCalibration(), (200, 100, 400))
+
+
+    def test__getCalibratedRackCenter(self):
+        r = racks.stackable(rack_name='RackThatCannotBeNamed', rack_type='test_rack')
+        r.rack_data['position'] = [400, 200, 500]
+        self.assertEqual(r.getCalibratedRackCenter(), (400, 200, 500))
+
+
+# =============================================================================
+# Testing stackable racks
+# =============================================================================
+    
+    def test__stackableOnTop(self):
+        """
+        This one tests behaviour of a stackable rack on top of a stack
+        """
+        r = racks.stackable(rack_name='RackThatCannotBeNamed', rack_type='test_rack')
+        r_below = racks.stackable(rack_name='BottomRackThatCannotBeNamed', rack_type='test_rack')
+        
+        r.max_height = 100
+        
+        self.assertEqual(r.top_item, None)
+        self.assertEqual(r.getTopItem(), None)
+        
+        # Now simulating the bottom rack being calibrated, and then a new one
+        # placed on top of the bottom rack.
+        r_below.rack_data['position'] = [400, 200, 500]
+        r_below.rack_data['pos_stalagmyte'] = [200, 100, 400]
+        self.assertEqual(r_below.getCalibratedRackCenter(), (400, 200, 500))
+        r_below.placeItemOnTop(r)
+        # Stackable rack has height 100 mm, so the new top will be 100 mm above calibrated value
+        # X and Y values stays the same.
+        self.assertEqual(r.getCalibratedRackCenter(), (400, 200, 500-100))
+        self.assertEqual(r_below.getTopItem(), r)
+        
+        # Now simulating removal of the top rack from the bottom rack
+        r_below.removeTopItem()
+        self.assertEqual(r_below.getTopItem(), None)
+        # Coordinates should stay the same as before
+        self.assertEqual(r_below.getCalibratedRackCenter(), (400, 200, 500))
+        
+        # Now simulating the case when the neq rack was placed on top, calibrated,
+        # received new calibration values and then removed.
+        r_below.placeItemOnTop(r)
+        r.updateCalibratedRackCenter(402, 198, 405) # new values are slightly different then old ones.
+        r_below.removeTopItem()
+        self.assertEqual(r_below.getCalibratedRackCenter(), (402, 198, 505))
+
+        # The case when a user manually places a stack onto the robot.
+        r = racks.stackable(rack_name='RackThatCannotBeNamed', rack_type='test_rack')
+        r_below = racks.stackable(rack_name='BottomRackThatCannotBeNamed', rack_type='test_rack')
+        r.max_height = 100
+        # User would initialize those racks manually. Both racks has no calibration at this point
+        self.assertRaises(KeyError, lambda x: r_below.rack_data['position'], 1)
+        self.assertRaises(KeyError, lambda x: r.rack_data['position'], 1)
+        racks.logging.error = mock.MagicMock() # removing logging error message for not calibrated rack
+        r_below.placeItemOnTop(r)
+        self.assertEqual(r_below.getTopItem(), r)
+        # Simulating calibration routine
+        # This is a very simple simulation, need to test an actual calibration routine
+        # Top rack is calibrated, as the bottom ones are impossible to calibrate
+        r.updateCalibratedRackCenter(x=402, y=198, z=405)
+        r.updateStalagmyteCalibration(x=200, y=100, z=400)
+        # Checking whether upper rack received its calibration parameters
+        self.assertEqual(r.getCalibratedRackCenter(), (402, 198, 405))
+        self.assertEqual(r.getStalagmyteCalibration(), (200, 100, 400))
+        # Removing top rack
+        r_below.removeTopItem()
+        # Checking whether the bottom rack received calibration data 
+        # And that the bottom rack height is correctly calculated
+        self.assertEqual(r_below.getCalibratedRackCenter(), (402, 198, 505))
+        self.assertEqual(r.getStalagmyteCalibration(), (200, 100, 400))
+        
     
         
 if __name__ == '__main__':

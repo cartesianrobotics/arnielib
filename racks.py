@@ -161,7 +161,8 @@ class rack():
         self.rack_data['position'] = [x, y, z]
 
     def getStalagmyteCalibration(self):
-        [x, y, z ] = self.rack_data['pos_stalagmyte']
+        [x, y, z] = self.rack_data['pos_stalagmyte']
+        return x, y, z
         
     def updateStalagmyteCalibration(self, x, y, z):
         self.rack_data['pos_stalagmyte'] = [x, y, z]
@@ -242,7 +243,7 @@ class rack():
         coord_list = self.calcWellsPositions()
         return coord_list[well_col][well_row][0], coord_list[well_col][well_row][1]
     
-    
+    # TODO: This function, and calcRackCenterFullCalibration uses too much of the same code
     def calcWorkingPosition(self, well_col, well_row, tool=None):
         
         #print (self.rack_data)
@@ -393,6 +394,43 @@ class stackable(rack):
     There is a general need to place racks on top of each other. 
     This class describes the behavior of such racks.
     """
+    
+    # CURRENT TODO: Remove those functions, add ability to return object of an upper stackable, or None if that one
+    # is the top one.
+    
+    def __init__ (self, rack_name, x_slot=None, y_slot=None, rack_type=None, rack_data=None):
+        super().__init__(rack_name, x_slot, y_slot, rack_type, rack_data)
+        # When a stackable is created, it is assumed to be on top of the stack. 
+        # Therefore, the object of a stackable above that will be None.
+        self.top_item = None
+    
+    def placeItemOnTop(self, top_item):
+        self.top_item = top_item
+        try:
+            # If racks are calibrated, the top item receives calibration from the bottom one.
+            x, y, z = self.getCalibratedRackCenter()
+            z_item_on_top = z - self.top_item.max_height
+            self.top_item.rack_data['position'] = [x, y, z_item_on_top]
+        except:
+            # If not, no calibration is transferred.
+            pass
+        
+    def getTopItem(self):
+        return self.top_item
+        
+    def removeTopItem(self, update_calibration=True):
+        """
+        "Removes" the rack which was sitting on top of the current rack.
+        """
+        if update_calibration:
+            # Situation when the top rack was calibrated, but the current one was not.
+            top_item = self.getTopItem()
+            x_calibrated, y_calibrated, z_calibr_top = top_item.getCalibratedRackCenter()
+            z_calibr = z_calibr_top + top_item.max_height
+            self.updateCalibratedRackCenter(x_calibrated, y_calibrated, z_calibr)
+        # Upon removal, current rack becomes the top one (and so, a gripper may grab it)
+        self.top_item = None
+        
     
 # TODO: create a unified class "item", that will be a parent
 # for all racks, samples, tools etc, handling common operations such as save/load parameters,
