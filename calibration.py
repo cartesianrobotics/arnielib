@@ -289,7 +289,8 @@ def calibrateRack(probe, rack, x_calibration_deltaY=0, y_calibration_deltaX=0):
     # To Z calibration point using recently discovered coordinates of the center of the rack.
     ar.move(x=center_x+calibr_Z_dX, y=center_y+calibr_Z_dY)
     slot_x, slot_y, slot_z = rack.getSavedSlotCenter()
-    ar.move(z=slot_z-rack.max_height+calibr_Z_dZ)
+    height_from_bottom = rack.getHeightFromFloor()
+    ar.move(z=slot_z-height_from_bottom+calibr_Z_dZ)
     
     # Finding Z height
     z = probe.findWall(axis='z', direction=1)
@@ -448,7 +449,7 @@ def calibrateToolCustomPoints(tool, stationary_probe):
     # Finding center by X
     opposite_x = x_Xrear - x_Xfrontal
     center_x = stationary_probe.findCenterOuter(axis='x', raise_height=raise_z, 
-        dist_through_obstruct=opposite_x)
+        dist_through_obstruct=opposite_x, step_back_length=tool.step_back_length)
         
     # Moving towards Y calibration
     # Up
@@ -462,7 +463,7 @@ def calibrateToolCustomPoints(tool, stationary_probe):
     # Finding center by Y
     dist_through_obstruct = y_Yrear - y_Yfrontal
     center_y = stationary_probe.findCenterOuter(axis='y', raise_height=raise_z,
-        dist_through_obstruct=dist_through_obstruct)
+        dist_through_obstruct=dist_through_obstruct, step_back_length=tool.step_back_length)
     
     # Moving towards Z calibration
     # Up

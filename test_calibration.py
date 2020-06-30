@@ -91,6 +91,51 @@ class tool_test_case(unittest.TestCase):
             pass
 
 
+    def test__calibrateRack__stackable(self):
+        cartesian.arnie = mock.MagicMock()
+        tools.mobile_touch_probe = mock.MagicMock()
+        
+        # Initializing robot with a tool (mocked)
+        ar = cartesian.arnie('COM1', 'COM2')
+        tp = tools.mobile_touch_probe('COM3')
+        
+        
+        # Touch probe parameters
+        tp.getStalagmyteCoord = mock.MagicMock()
+        tp.getStalagmyteCoord.return_value = (66, 66, 500)
+        
+        # Initializing stack of racks
+        r = racks.stackable(rack_name='RackThatCannotBeNamed', rack_type='test_rack')
+        r_below = racks.stackable(rack_name='BottomRackThatCannotBeNamed', rack_type='test_rack')
+        r_below.overwriteSlot(1, 4)
+        
+        # Parameters of a bottom rack
+        r_below.getSavedSlotCenter = mock.MagicMock()
+        r_below.getSavedSlotCenter.return_value = (200, 100, 600)
+        
+        # Forming a stack by placing top rack onto the bottom rack
+        r_below.placeItemOnTop(r)
+        
+        
+        # Mocking findCenterOuter function to give different outputs for 'x' and 'y'
+        tp.findCenterOuter = mock.MagicMock(side_effect=[205, 95])
+        tp.findWall = mock.MagicMock()
+        tp.findWall.return_value = 301
+        
+        # Performing calibration
+        x, y, z = calibration.calibrateRack(tp, r)
+        
+        # Evaluating outputs
+        self.assertEqual(x, 205)
+        self.assertEqual(y, 95)
+        self.assertEqual(z, 301)
+        
+        # Evaluating robot movements based on provided parameters
+        tp.robot.move.assert_has_calls([mock.call(x=129, y=100, z=406, z_first=False),
+                                        mock.call(x=205, y=54),
+                                        mock.call(x=205, y=95),
+                                        mock.call(z=400)])
+        
 
             
     @mock.patch('tools.mobile_touch_probe')
@@ -190,7 +235,59 @@ class tool_test_case(unittest.TestCase):
         
         # Evaluating
         tool.setStalagmyteCoord.assert_called_with(266, 266, 420)
+
             
+    @mock.patch('tools.stationary_touch_probe')
+    @mock.patch('tools.mobile_tool')
+    @mock.patch('cartesian.arnie')    
+    def test__calibrateToolCustomPoints(self, mock_arnie, mock_tool, mock_stp):
+        """
+        At the moment, the test only confirms the function runs without errors.
+        """
+        ar = mock_arnie('COM1', 'COM2')
+        stp = mock_stp('COM3')
+        tool = mock_tool('COM4')
+        
+        stp.rack.getCalibratedRackCenter.return_value = (200, 100, 500)
+        
+        # Testing
+        x, y, z = calibration.calibrateToolCustomPoints(tool, stp)
+        
+
+    @mock.patch('tools.stationary_touch_probe')
+    @mock.patch('tools.mobile_tool')
+    @mock.patch('cartesian.arnie')    
+    def test__calibrateToolCustomPoints__step_back_length_usage(self, mock_arnie, mock_tool, mock_stp):
+        """
+        At the moment, the test only confirms the function runs without errors.
+        """
+        ar = mock_arnie('COM1', 'COM2')
+        stp = mock_stp('COM3')
+        tool = mock_tool('COM4')
+        
+        stp.rack.getCalibratedRackCenter.return_value = (200, 100, 500)
+        tool.step_back_length = -3
+        
+        tool.immobile_probe_calibration_points = {}
+        tool.immobile_probe_calibration_points['x_Xfrontal'] = -35
+        tool.immobile_probe_calibration_points['x_Xrear'] = 32
+        tool.immobile_probe_calibration_points['raise_z'] = 42
+        tool.immobile_probe_calibration_points['z_Y'] = -20
+        tool.immobile_probe_calibration_points['y_Yfrontal'] = -53.0
+        tool.immobile_probe_calibration_points['y_Yrear'] = 53.0
+        tool.immobile_probe_calibration_points['y_X'] = 0.0
+        tool.immobile_probe_calibration_points['z_X'] = 4.0
+        tool.immobile_probe_calibration_points['x_Y'] = 0.0
+        tool.immobile_probe_calibration_points['z_Y'] = -20.0
+        tool.immobile_probe_calibration_points['dx_Z'] = 0
+        tool.immobile_probe_calibration_points['dy_Z'] = -40
+        
+        # Testing
+        x, y, z = calibration.calibrateToolCustomPoints(tool, stp)
+        
+        stp.findCenterOuter.assert_called_with(axis='y', 
+            raise_height=42, dist_through_obstruct=106.0, step_back_length=-3)
+
             
             
 if __name__ == '__main__':

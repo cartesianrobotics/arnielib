@@ -482,7 +482,8 @@ class racks_test_case(unittest.TestCase):
         This one tests behaviour of a stackable rack on top of a stack
         """
         r = racks.stackable(rack_name='RackThatCannotBeNamed', rack_type='test_rack')
-        r_below = racks.stackable(rack_name='BottomRackThatCannotBeNamed', rack_type='test_rack')
+        r_below = racks.stackable(rack_name='BottomRackThatCannotBeNamed', rack_type='test_rack', 
+                                  x_slot=1, y_slot=4)
         
         r.max_height = 100
         
@@ -513,9 +514,23 @@ class racks_test_case(unittest.TestCase):
         r_below.removeTopItem()
         self.assertEqual(r_below.getCalibratedRackCenter(), (402, 198, 505))
 
+
+    def test__stackableOnTop__ManualPlacement(self):
+        """
+        User manually places a stack onto the robot.
+        """
+        try:
+            os.remove('RackThatCannotBeNamed.json')
+        except:
+            pass
+        try:
+            os.remove('BottomRackThatCannotBeNamed.json')
+        except:
+            pass
         # The case when a user manually places a stack onto the robot.
         r = racks.stackable(rack_name='RackThatCannotBeNamed', rack_type='test_rack')
-        r_below = racks.stackable(rack_name='BottomRackThatCannotBeNamed', rack_type='test_rack')
+        r_below = racks.stackable(rack_name='BottomRackThatCannotBeNamed', rack_type='test_rack',
+                                  x_slot=1, y_slot=4)
         r.max_height = 100
         # User would initialize those racks manually. Both racks has no calibration at this point
         self.assertRaises(KeyError, lambda x: r_below.rack_data['position'], 1)
@@ -537,8 +552,137 @@ class racks_test_case(unittest.TestCase):
         # And that the bottom rack height is correctly calculated
         self.assertEqual(r_below.getCalibratedRackCenter(), (402, 198, 505))
         self.assertEqual(r.getStalagmyteCalibration(), (200, 100, 400))
+                                  
         
+        
+    def test__stackable__getSimpleCalibrationPoints(self):
+        """
+        Checks that function returns proper calibration points for stackables
+        """
+        
+        r = racks.stackable(rack_name='RackThatCannotBeNamed', rack_type='test_rack')
+        r_below = racks.stackable(rack_name='BottomRackThatCannotBeNamed', rack_type='test_rack')
+        # Initially defining slot for lower rack, but not for the upper one
+        r_below.overwriteSlot(1, 4)
+        
+        # Parameters of a bottom rack
+        r_below.getSavedSlotCenter = mock.MagicMock()
+        r_below.getSavedSlotCenter.return_value = (200, 100, 600)
+    #    r_below.x_width = 150
+    #    r_below.x_init_calibrat_dist_from_wall = 5
+    #    r_below.z_height = 20
+    #    r_below.xy_calibrat_height_dz = 5
+    #    r_below.y_width = 90
+    #    r_below.y_init_calibrat_dist_from_wall = 5
+    #    r_below.max_height = 20
+    #    r_below.dz_clearance = 10
+    #    
+    #
+    #    r.x_width = 150
+    #    r.x_init_calibrat_dist_from_wall = 5
+    #    r.z_height = 20
+    #    r.xy_calibrat_height_dz = 5
+    #    r.y_width = 90
+    #    r.y_init_calibrat_dist_from_wall = 5
+    #    r.max_height = 20
+    #    r.dz_clearance = 10
+        
+        
+        r_below.placeItemOnTop(r)
+        
+        bx_cal, by_cal, bz_cal, b_opposite_x, b_orthogonal_y, b_raise_z = r_below.getSimpleCalibrationPoints()
+        
+        #self.assertEqual(bx_cal, 200 - 130/2 - 6)
+        
+        x_cal, y_cal, z_cal, opposite_x, orthogonal_y, raise_z = r.getSimpleCalibrationPoints()
+        
+        self.assertEqual(x_cal, 129)
+        self.assertEqual(y_cal, 100)
+        self.assertEqual(bz_cal, 506)
+        self.assertEqual(z_cal, 406)
+        self.assertEqual(r_below.z_height, 100)
+        self.assertEqual(r.z_height, 200)
+        self.assertEqual(opposite_x, 142)
+        self.assertEqual(orthogonal_y, 46)
+        self.assertGreater(raise_z, 6)
     
+
+    
+    
+    
+    # TODO: finish this test for the cases that rack has or has no calibration
+    def test__stackable__getCalibratedRackCenter__lower_rack_calibrated(self):
+        r = racks.stackable(rack_name='RackThatCannotBeNamed', rack_type='test_rack')
+        r_below = racks.stackable(rack_name='BottomRackThatCannotBeNamed', rack_type='test_rack')
+        
+        r_below.overwriteSlot(1, 4)
+        
+        #r_below.getSavedSlotCenter = mock.MagicMock()
+        #r_below.getSavedSlotCenter.return_value = (200, 100, 600)
+        
+        r_below.rack_data['position'] = [200, 100, 600]
+        
+        r_below.placeItemOnTop(r)
+        
+        self.assertEqual(r_below.getCalibratedRackCenter(), (200, 100, 600))
+        self.assertEqual(r.getCalibratedRackCenter(), (200, 100, 500))
+
+
+    def test__stackable__getCalibratedRackCenter__upper_rack_calibrated(self):
+        r = racks.stackable(rack_name='RackThatCannotBeNamed', rack_type='test_rack')
+        r_below = racks.stackable(rack_name='BottomRackThatCannotBeNamed', rack_type='test_rack')
+        
+        r_below.overwriteSlot(1, 4)
+        # Placing rack without calibration
+        r_below.placeItemOnTop(r)
+        # Upper rack receives calibration
+        r.updateCenter(200, 100, 400, 50, 70, 450)
+        
+        self.assertEqual(r_below.getCalibratedRackCenter(), (200, 100, 500))
+        self.assertEqual(r.getCalibratedRackCenter(), (200, 100, 400))
+
+
+    def test__stackable__getCalibratedRackCenter__re_calibration(self):
+        r = racks.stackable(rack_name='RackThatCannotBeNamed', rack_type='test_rack')
+        r_below = racks.stackable(rack_name='BottomRackThatCannotBeNamed', rack_type='test_rack')
+        r_below.overwriteSlot(1, 4)
+        r_below.rack_data['position'] = [200, 100, 600]
+        r_below.placeItemOnTop(r)
+        self.assertEqual(r_below.getCalibratedRackCenter(), (200, 100, 600))
+        self.assertEqual(r.getCalibratedRackCenter(), (200, 100, 500))
+        # Simulating upper rack re-calibration
+        r.updateCenter(210, 95, 502, 51, 72, 449)
+        self.assertEqual(r_below.getCalibratedRackCenter(), (210, 95, 602))
+        self.assertEqual(r.getCalibratedRackCenter(), (210, 95, 502))
+
+
+
+    def test__stackable__calibrate_upper_rack(self):
+        r = racks.stackable(rack_name='RackThatCannotBeNamed', rack_type='test_rack')
+        r_below = racks.stackable(rack_name='BottomRackThatCannotBeNamed', rack_type='test_rack')
+        
+        r_below.getSavedSlotCenter = mock.MagicMock()
+        r_below.getSavedSlotCenter.return_value = (200, 100, 600)
+        
+        # Initially defining slot for lower rack, but not for the upper one
+        r_below.overwriteSlot(1, 4)
+        # Parameters of a bottom rack
+        r_below.updateCenter(x=200, y=100, z=600, x_btm_touch=100, y_btm_touch=50, z_btm_touch=550)
+        #r_below.save()
+        #r_below.getSavedSlotCenter = mock.MagicMock()
+        #r_below.getSavedSlotCenter.return_value = (200, 100, 600)
+        
+        r_below.placeItemOnTop(r)
+        # Parameters of the top rack that were inherited from the bottom rack; before top rack 
+        # calibration
+        x_cal, y_cal, z_cal, opposite_x, orthogonal_y, raise_z = r.getSimpleCalibrationPoints()
+        self.assertEqual(x_cal, 129)
+        self.assertEqual(y_cal, 100)
+        self.assertEqual(z_cal, 406)
+        # Updating rack center, as a part of rack calibration routine
+        #r.updateCenter()
+        
+        
         
 if __name__ == '__main__':
     unittest.main()

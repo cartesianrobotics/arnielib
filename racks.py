@@ -168,12 +168,17 @@ class rack():
         self.rack_data['pos_stalagmyte'] = [x, y, z]
     
     
+    def getHeightFromFloor(self):
+        return self.z_height
+    
+    
     def getSimpleCalibrationPoints(self):
+
         x_cntr, y_cntr, z_cntr = self.getSavedSlotCenter()
         
         x_start = x_cntr - self.x_width / 2.0 - self.x_init_calibrat_dist_from_wall
         y_start = y_cntr
-        z_start = z_cntr - self.z_height + self.xy_calibrat_height_dz
+        z_start = z_cntr - self.getHeightFromFloor() + self.xy_calibrat_height_dz
         
         opposite_side_dist = self.x_width + self.x_init_calibrat_dist_from_wall * 2.0
         orthogonal_retraction = self.y_width / 2.0 + self.y_init_calibrat_dist_from_wall
@@ -385,6 +390,15 @@ class rack():
         gripper_name = tool.tool_data['name']
         z_relative_to_top = self.rack_data['gripper'][gripper_name]['z_grip']
         return self.max_height - z_relative_to_top
+
+
+    def performFakeCalibration(self):
+        """
+        Fills calibration parameters with the slot coordinates.
+        Use when for some reason calibration is impossible or not required (approximate value is fine)
+        """
+        x, y, z = self.getSavedSlotCenter()
+        self.updateCalibratedRackCenter(x, y, z)
         
 
 class stackable(rack):
@@ -403,17 +417,32 @@ class stackable(rack):
         # When a stackable is created, it is assumed to be on top of the stack. 
         # Therefore, the object of a stackable above that will be None.
         self.top_item = None
+        self.bottom_item = None
     
     def placeItemOnTop(self, top_item):
         self.top_item = top_item
+        # This lets the top item know its bottom item
+        self.top_item.bottom_item = self
         try:
             # If racks are calibrated, the top item receives calibration from the bottom one.
             x, y, z = self.getCalibratedRackCenter()
             z_item_on_top = z - self.top_item.max_height
             self.top_item.rack_data['position'] = [x, y, z_item_on_top]
+            xs, ys, zs = self.getStalagmyteCalibration()
+            top_item.updateStalagmyteCalibration(xs, ys, zs)
         except:
             # If not, no calibration is transferred.
             pass
+        # The top item receives the same slot info as the current item
+        x_slot = self.rack_data['n_x']
+        y_slot = self.rack_data['n_y']
+        self.top_item.overwriteSlot(x_slot, y_slot)
+        # Setting new height from the floor. It is equal to the current heigth + heigth of the top item (from config)
+        config = configparser.ConfigParser()
+        config_path = 'configs/' + self.top_item.rack_data['type'] + '.ini'
+        config.read(config_path)
+        top_item_z_height_from_config = float(config['geometry']['z_box_height'])
+        self.top_item.z_height = self.getHeightFromFloor() + top_item_z_height_from_config
         
     def getTopItem(self):
         return self.top_item
@@ -430,6 +459,37 @@ class stackable(rack):
             self.updateCalibratedRackCenter(x_calibrated, y_calibrated, z_calibr)
         # Upon removal, current rack becomes the top one (and so, a gripper may grab it)
         self.top_item = None
+
+
+    # TODO: Make a separate class to handle floor, get rid of param altogether.
+    def getSavedSlotCenter(self):
+        
+        if self.bottom_item is not None:
+            x, y, z = self.bottom_item.getSavedSlotCenter()
+        else:        
+            x_slot = self.rack_data['n_x']
+            y_slot = self.rack_data['n_y']
+            
+            x, y = param.calcSquareSlotCenterFromVertices(x_slot, y_slot)
+            z = param.getSlotZ(x_slot, y_slot)
+        
+        return x, y, z
+
+    
+    def updateCenter(self, x, y, z, x_btm_touch, y_btm_touch, z_btm_touch):
+        self.updateCalibratedRackCenter(x, y, z)
+        self.updateStalagmyteCalibration(x_btm_touch, y_btm_touch, z_btm_touch)
+        if self.bottom_item:
+           # TODO: Stackable racks need to have 2 variables: distance from floor to the rack top, and 
+           # distance from the bottom of the rack to its top (latter one is from config)
+           config = configparser.ConfigParser()
+           config_path = 'configs/' + self.rack_data['type'] + '.ini'
+           config.read(config_path)
+           height_from_config = float(config['geometry']['z_box_height'])
+           z = z + height_from_config
+           self.bottom_item.updateCenter(x, y, z, x_btm_touch, y_btm_touch, z_btm_touch)
+
+
         
     
 # TODO: create a unified class "item", that will be a parent

@@ -131,6 +131,10 @@ class tool(llc.serial_device):
                     self.config['calibration']['delta_y_position_for_Z_axis_calibration'])
         except:
             pass
+        try:
+            self.step_back_length = float(self.config['calibration']['step_back_length'])
+        except:
+            self.step_back_length = 3
         
 
         if tool_name is not None:
@@ -1362,26 +1366,29 @@ class touch_probe():
 
     def findWall(self, axis, direction, step_dict=None, step_back_length=3):
         if step_dict is None:
-            step_dict = touch_probe.step_dict
+            step_dict = self.step_dict
         return findWall(self, axis, direction, 
                    step_dict=step_dict, 
                    step_back_length=step_back_length)
         
     
-    def findCenterInner(self, axis, step_dict=None, step_back_length=3, opposite_side_dist=0, direction=1):
+    def findCenterInner(self, axis, step_dict=None, opposite_side_dist=0, direction=1, step_back_length=3):
         # Finding first wall
-        front_wall = self.findWall(axis=axis, direction=direction, step_dict=step_dict)
+        front_wall = self.findWall(axis=axis, direction=direction, step_dict=step_dict,
+                                   step_back_length=step_back_length)
         # Moving to the other wall
         self.robot.moveAxisDelta(axis=axis, value=-direction*opposite_side_dist)
         # Finding second wall
-        rear_wall = self.findWall(axis=axis, direction=-direction, step_dict=step_dict)
+        rear_wall = self.findWall(axis=axis, direction=-direction, step_dict=step_dict, 
+                                  step_back_length=step_back_length)
         # Calculating center
         center = (front_wall + rear_wall) / 2.0
         return center
     
     
     def findCenterOuter(self, axis, raise_height, dist_through_obstruct,
-                        step_dict=None, step_back_length=3, opposite_side_dist=0, direction=1):
+                        step_dict=None, opposite_side_dist=0, direction=1, 
+                        step_back_length=3):
         """
         Performs "Pi-type" calibtation: from one side of the wall, then go through the wall,
         then from the other side of the wall.
@@ -1396,7 +1403,8 @@ class touch_probe():
             ...
         """
         # Find first wall
-        front_wall = self.findWall(axis=axis, direction=direction, step_dict=step_dict)
+        front_wall = self.findWall(axis=axis, direction=direction, step_dict=step_dict, 
+                                   step_back_length=step_back_length)
         # Raise gantry
         self.robot.move_delta(dz=-raise_height)
         # Move through obstruction
@@ -1404,7 +1412,8 @@ class touch_probe():
         # Lower gantry back
         self.robot.moveAxisDelta(axis='z', value=raise_height)
         # Find opposite side of the wall
-        rear_wall = self.findWall(axis=axis, direction=-direction, step_dict=step_dict)
+        rear_wall = self.findWall(axis=axis, direction=-direction, step_dict=step_dict, 
+                                  step_back_length=step_back_length)
         # Calculateing center
         center = (front_wall + rear_wall) / 2.0
         return center
@@ -1799,6 +1808,7 @@ class mobile_gripper(mobile_tool):
             close_diam = man_close_diam
         else:
             close_diam = rack.getGrippingCloseDiam(tool=self)
+        self.toDiameter(diameter=close_diam, powerdown=powerdown)
         # Temporary storing sample object in the tool, as it will be used
         # to calculate parameters to place it somewhere.
         self.sample = rack
@@ -1808,6 +1818,14 @@ class mobile_gripper(mobile_tool):
         # but now getGrippingHeight will account for added_z_length and extra_retraction_dz
         z_retract = rack.getGrippingHeight(tool=self) - extra_retraction_dz
         self.robot.move(z=z_retract)
+        
+        try:
+            # In case rack is placed on top of another rack,
+            # this tells the bottom rack that the top is removed.
+            rack.bottom_item.removeTopItem()
+        except:
+            pass
+        
         if test:
             param_dict = {}
             param_dict['open_diam'] = open_diam
@@ -1825,10 +1843,11 @@ class mobile_gripper(mobile_tool):
         self.getToRackCenter(rack=destination_rack)
         x, y, z = destination_rack.calcRackCenterFullCalibration(tool=self)
         # "Placing" to the new rack
-        self.sample.place(destination_rack)
+        destination_rack.placeItemOnTop(self.sample)
         # Calculating Z to which to lower the sample 
         # Sample now has parameters of the destination rack and place
-        z_final = z + destination_rack.max_height + dz
+        #z_final = z + destination_rack.getHeightFromFloor() + dz
+        z_final = z + dz
         self.robot.move(z=z_final)
          # Opening gripper
         if man_open_diam is not None:
@@ -1837,7 +1856,7 @@ class mobile_gripper(mobile_tool):
             open_diam = self.sample.getGrippingOpenDiam(tool=self)
         self.toDiameter(diameter=open_diam, powerdown=powerdown)
         # Sample is no longer is the gripper. Changing gripper object properties accordingly
-        self.sample.disengage()
+        #self.sample.disengage()
         self.gripper_has_something = False
         self.added_z_length = 0
         placed_rack = self.sample
@@ -1849,7 +1868,7 @@ class mobile_gripper(mobile_tool):
         if test:
             param_dict = {}
             param_dict['destination_coord'] = (x, y, z)
-            param_dict['rack_heigth'] = destination_rack.max_height
+            param_dict['rack_heigth'] = destination_rack.getHeightFromFloor()
             param_dict['z_final_absolute'] = z_final
             param_dict['open_diam'] = open_diam
             return placed_rack, param_dict

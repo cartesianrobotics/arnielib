@@ -638,7 +638,7 @@ class tool_test_case(unittest.TestCase):
         gr.setStalagmyteCoord(x=210, y=95, z=530)
         
         # Initializing a test rack
-        r = racks.rack(rack_name="p1000_1_test", 
+        r = racks.stackable(rack_name="p1000_1_test", 
             rack_data={'n_x':0, 'n_y':2, 'type': 'p1000_tips'})
         r.updateCenter(x=100, y=200, z=550, x_btm_touch=90, y_btm_touch=66, z_btm_touch=500)
         #r.z_working_height = 0
@@ -676,9 +676,13 @@ class tool_test_case(unittest.TestCase):
         # z_rack_full_calibrated = 550 - 8 - 500 + 530 = 572
         # z_grab = 572 + 10 = 582
 
-    @mock.patch('tools.racks.rack')
-    @mock.patch('tools.racks.rack')
-    def test__mobile_gripper__placeRack_mocked_rack(self, mock_dest_rack, gripped_rack):
+    def test__mobile_gripper__placeRack(self):
+        
+        gripped_rack = racks.stackable(rack_name='RackThatCannotBeNamed', rack_type='test_rack')
+        dest_rack = racks.stackable(rack_name='BottomRackThatCannotBeNamed', rack_type='test_rack')
+        dest_rack.updateCenter(600, 300, 550, 90, 66, 500)
+        dest_rack.overwriteSlot(1, 3)
+        
         cartesian.arnie = mock.MagicMock()
         tools.llc.serial_device.readAll = mock.MagicMock()
         tools.llc.serial_device.readAll.return_value = "mobile gripper"
@@ -688,25 +692,142 @@ class tool_test_case(unittest.TestCase):
         gr = tools.mobile_gripper(robot=ar, com_port_number='COM3', tool_name='mobile_gripper')
         gr.operateGripper = mock.MagicMock()
         gr.getToRackCenter = mock.MagicMock()
+        gr.setStalagmyteCoord(x=210, y=95, z=430)
+        gripped_rack.setGrippingProperties(90, 80, 10, gripper=gr)
+        dest_rack.setGrippingProperties(90, 80, 10, gripper=gr)
         
-        gripped_rack.place = mock.MagicMock()
-        mock_dest_rack.max_height = 100
-        gripped_rack.getGrippingOpenDiam.return_value = 90
         gr.sample = gripped_rack
         
+        placed_rack_object, param_dict = gr.placeRack(dest_rack, test=True)
         
-        mock_dest_rack.calcRackCenterFullCalibration.return_value = (600, 300, 550)
-        
-        placed_rack_object, param_dict = gr.placeRack(mock_dest_rack, test=True)
-        
+        self.assertEqual(gr.getStalagmyteCoord()[2], 430)
+        self.assertEqual(dest_rack.calcRackCenterFullCalibration(tool=gr), 
+                         (600+210-90, 300+95-66, 550+430-500))
         self.assertEqual(gripped_rack, placed_rack_object)
-        self.assertEqual(param_dict['destination_coord'][0], 600)
-        self.assertEqual(param_dict['destination_coord'][1], 300)
-        self.assertEqual(param_dict['destination_coord'][2], 550)
+        self.assertEqual(param_dict['destination_coord'][0], 600+210-90)
+        self.assertEqual(param_dict['destination_coord'][1], 300+95-66)
+        self.assertEqual(param_dict['destination_coord'][2], 550+430-500)
         self.assertEqual(param_dict['rack_heigth'], 100)
-        self.assertEqual(param_dict['z_final_absolute'], 550+100)
+        self.assertEqual(param_dict['z_final_absolute'], 480)
         self.assertEqual(param_dict['open_diam'], 90)
         
+        
+    
+    def test__plate_gripper__grabAndPlaceStackable(self):
+        cartesian.arnie = mock.MagicMock()
+        tools.llc.serial_device.readAll = mock.MagicMock()
+        tools.llc.serial_device.readAll.return_value = "mobile gripper"
+        tools.llc.serial.Serial = mock.MagicMock()
+        
+        ar = cartesian.arnie('COM1', 'COM2')
+        gr = tools.mobile_gripper(robot=ar, com_port_number='COM3', tool_name='mobile_gripper')
+        gr.operateGripper = mock.MagicMock()
+        gr.getToRackCenter = mock.MagicMock()
+        
+        s1 = racks.stackable(rack_name='RackThatCannotBeNamed-1', rack_type='test_rack')
+        s1.overwriteSlot(1, 3)
+        s2 = racks.stackable(rack_name='RackThatCannotBeNamed-2', rack_type='test_rack')
+        s3 = racks.stackable(rack_name='RackThatCannotBeNamed-3', rack_type='test_rack')
+        s3.overwriteSlot(2, 4)
+        
+        s1.rack_data['position'] = [400, 200, 500]
+        s1.rack_data['pos_stalagmyte'] = [200, 100, 400]
+        s3.rack_data['position'] = [800, 330, 300]
+        s3.rack_data['pos_stalagmyte'] = [200, 100, 400]
+        gr.setStalagmyteCoord(x=210, y=95, z=530)
+        s2.max_height = 100
+        s2.setGrippingProperties(90, 80, 10, gripper=gr)
+        
+        s1.placeItemOnTop(s2)
+        
+        self.assertEqual(s2.getCalibratedRackCenter(), (400, 200, 400))
+        self.assertEqual(s2.rack_data['pos_stalagmyte'], [200, 100, 400])
+        self.assertEqual(s2.getStalagmyteCalibration(), (200, 100, 400))
+        self.assertEqual(s2.rack_data['n_x'], 1)
+        self.assertEqual(s2.rack_data['n_y'], 3)
+        
+        param_dict = gr.grabRack(s2, test=True)
+        
+        # Bottom rack shall now has no top rack:
+        self.assertEqual(s1.getTopItem(), None)
+        # Rack is in the gripper
+        self.assertEqual(gr.sample, s2)
+        self.assertEqual(gr.gripper_has_something, True)
+        self.assertEqual(gr.added_z_length, 90)
+        # Grabbing parameters
+        self.assertEqual(param_dict['z_grab'], 400-0-400+530+10)
+        
+        # Placing to the new rack
+        placed_rack_object, param_dict = gr.placeRack(s3, test=True)
+        # Checking that gripper has nothing left
+        self.assertEqual(gr.sample, None)
+        self.assertEqual(gr.gripper_has_something, False)
+        self.assertEqual(gr.added_z_length, 0)
+        # Updated rack parameters:
+        self.assertEqual(s2.getCalibratedRackCenter(), (800, 330, 200))
+        self.assertEqual(s2.getStalagmyteCalibration(), (200, 100, 400))
+        self.assertEqual(s3.getTopItem(), s2)
+        self.assertEqual(s2.bottom_item, s3)
+        self.assertEqual(s2.rack_data['n_x'], 2)
+        self.assertEqual(s2.rack_data['n_y'], 4)
+
+    
+    def test__plate_gripper__test__plate_gripper__grabAndPlaceStackable_SameSpot(self):
+        cartesian.arnie = mock.MagicMock()
+        tools.llc.serial_device.readAll = mock.MagicMock()
+        tools.llc.serial_device.readAll.return_value = "mobile gripper"
+        tools.llc.serial.Serial = mock.MagicMock()
+        
+        ar = cartesian.arnie('COM1', 'COM2')
+        gr = tools.mobile_gripper(robot=ar, com_port_number='COM3', tool_name='mobile_gripper')
+        gr.operateGripper = mock.MagicMock()
+        gr.getToRackCenter = mock.MagicMock()
+        
+        s1 = racks.stackable(rack_name='RackThatCannotBeNamed-1', rack_type='test_rack')
+        s1.overwriteSlot(1, 3)
+        s2 = racks.stackable(rack_name='RackThatCannotBeNamed-2', rack_type='test_rack')
+        
+        s1.rack_data['position'] = [400, 200, 500]
+        s1.rack_data['pos_stalagmyte'] = [200, 100, 400]
+        gr.setStalagmyteCoord(x=210, y=95, z=530)
+        s2.max_height = 100
+        s2.setGrippingProperties(90, 80, 10, gripper=gr)
+        
+        s1.placeItemOnTop(s2)
+        gr.grabRack(s2)
+        
+        gr.robot.move.assert_has_calls([mock.call(z=400-400+530+10)])
+        
+        gr.placeRack(s1)
+        
+        gr.robot.move.assert_has_calls([mock.call(z=400-400+530+10)])
+
+
+    def test__plate_gripper__grabRack__open_close_diameters(self):
+        cartesian.arnie = mock.MagicMock()
+        tools.llc.serial_device.readAll = mock.MagicMock()
+        tools.llc.serial_device.readAll.return_value = "mobile gripper"
+        tools.llc.serial.Serial = mock.MagicMock()
+        
+        ar = cartesian.arnie('COM1', 'COM2')
+        gr = tools.mobile_gripper(robot=ar, com_port_number='COM3', tool_name='mobile_gripper')
+        gr.operateGripper = mock.MagicMock()
+        gr.getToRackCenter = mock.MagicMock()
+        gr.setStalagmyteCoord(x=210, y=95, z=530)
+        
+        gr.toDiameter = mock.MagicMock()
+
+        s1 = racks.stackable(rack_name='RackThatCannotBeNamed-1', rack_type='test_rack')
+        s1.rack_data['position'] = [400, 200, 500]
+        s1.rack_data['pos_stalagmyte'] = [200, 100, 400]
+        s1.setGrippingProperties(90, 80, 10, gripper=gr)
+        
+        gr.grabRack(s1)
+        
+        gr.toDiameter.assert_has_calls([mock.call(diameter=90, powerdown=False), 
+                                        mock.call(diameter=80, powerdown=False)])
+        
+
         
 
 # ======================================================================================
@@ -714,9 +835,47 @@ class tool_test_case(unittest.TestCase):
 # ======================================================================================
 
 
+    def test__findWall__step_back_length_used(self):
+        tools.touch_probe = mock.MagicMock()
+        tools.approachUntilTouch = mock.MagicMock()
+        tp = tools.touch_probe()
+        tp.robot.axisToCoordinates.return_value = [90, 0, 0]
+        tp.step_dict = {
+                0: {'step_fwd': 3, 'speed_xy_fwd': 1000, 'speed_z_fwd':2000,
+                    'step_back': 3, 'speed_xy_back': 1000, 'speed_z_back':2000},
+                1: {'step_fwd': 0.2, 'speed_xy_fwd': 200, 'speed_z_fwd':1000,
+                    'step_back': 1, 'speed_xy_back': 500, 'speed_z_back':1000},
+                2: {'step_fwd': 0.05, 'speed_xy_fwd': 25, 'speed_z_fwd':500,
+                    'step_back': 0.2, 'speed_xy_back': 50, 'speed_z_back':500},
+            }
+        
+        tools.findWall(probe=tp, axis='x', direction=1)
+        tp.robot.axisToCoordinates.assert_called_with(axis='x', value=-3)
+        tools.findWall(probe=tp, axis='x', direction=1, step_back_length=-3)
+        tp.robot.axisToCoordinates.assert_called_with(axis='x', value=3)
+        
 
-
-
+    @mock.patch('tools.llc')
+    def test__touch_probe__findWall__step_back_length_used(self, mock_llc):
+        cartesian.arnie = mock.MagicMock()
+        
+        ar = cartesian.arnie()
+        ar.axisToCoordinates.return_value = [90, 0, 0]
+        
+        tp = tools.stationary_touch_probe(robot=ar)
+        tp.step_dict = {
+                0: {'step_fwd': 3, 'speed_xy_fwd': 1000, 'speed_z_fwd':2000,
+                    'step_back': 3, 'speed_xy_back': 1000, 'speed_z_back':2000},
+                1: {'step_fwd': 0.2, 'speed_xy_fwd': 200, 'speed_z_fwd':1000,
+                    'step_back': 1, 'speed_xy_back': 500, 'speed_z_back':1000},
+                2: {'step_fwd': 0.05, 'speed_xy_fwd': 25, 'speed_z_fwd':500,
+                    'step_back': 0.2, 'speed_xy_back': 50, 'speed_z_back':500},
+            }
+        
+        tp.findWall(axis='x', direction=1)
+        tp.robot.axisToCoordinates.assert_called_with(axis='x', value=-3)
+        tp.findWall(axis='x', direction=1, step_back_length=-3)
+        tp.robot.axisToCoordinates.assert_called_with(axis='x', value=3)
 
 
 if __name__ == '__main__':
