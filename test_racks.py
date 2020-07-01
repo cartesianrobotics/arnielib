@@ -681,8 +681,49 @@ class racks_test_case(unittest.TestCase):
         self.assertEqual(z_cal, 406)
         # Updating rack center, as a part of rack calibration routine
         #r.updateCenter()
+
+
+    def test__stackable__calibrate_upper_rack__coords_save(self):
+        # before-test cleanup
+        try:
+            os.remove('RackThatCannotBeNamed.json')
+        except:
+            pass
+        try:
+            os.remove('BottomRackThatCannotBeNamed.json')
+        except:
+            pass
         
+        r = racks.stackable(rack_name='RackThatCannotBeNamed', rack_type='test_rack')
+        r_below = racks.stackable(rack_name='BottomRackThatCannotBeNamed', rack_type='test_rack')
+
+        # Initially defining slot for lower rack, but not for the upper one
+        r_below.overwriteSlot(1, 4)
+        # Parameters of a bottom rack
+        r_below.rack_data['position'] = [200, 100, 600]
+        # Placing rack r on top of the r_below
+        r_below.placeItemOnTop(r)
+        # Simulating upper rack re-calibration
+        r.updateCenter(210, 95, 502, 51, 72, 449)
+        # Saving re-calibration (part of any calibration routine)
+        r.save()
         
+        self.assertEqual(r_below.getCalibratedRackCenter(), (210, 95, 602))
+        self.assertEqual(r.getCalibratedRackCenter(), (210, 95, 502))
+        
+        # Re-initializing bottom rack to see if it still has updated coordinates
+        r_below = racks.stackable(rack_name='BottomRackThatCannotBeNamed', rack_type='test_rack')
+        self.assertEqual(r_below.getCalibratedRackCenter(), (210, 95, 602))
+        
+        # after-test cleanup
+        try:
+            os.remove('RackThatCannotBeNamed.json')
+        except:
+            pass
+        try:
+            os.remove('BottomRackThatCannotBeNamed.json')
+        except:
+            pass
         
 if __name__ == '__main__':
     unittest.main()

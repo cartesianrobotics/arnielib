@@ -490,6 +490,15 @@ class stackable(rack):
            self.bottom_item.updateCenter(x, y, z, x_btm_touch, y_btm_touch, z_btm_touch)
 
 
+    def save(self):
+        rack_name = self.rack_data['name']
+        f = open(rack_name+'.json', 'w')
+        f.write(json.dumps(self.rack_data))
+        f.close()
+        if self.bottom_item:
+            # Saving also settings of the bottom rack
+            self.bottom_item.save()
+
         
     
 # TODO: create a unified class "item", that will be a parent
