@@ -575,6 +575,37 @@ class pipettor(mobile_tool):
         self.switchModeToNormal()
 
 
+    def setStalagmyteCoord(self, x, y, z):
+        """
+        With this function, #mobile_tool (touch probe, pipettor, etc.) object 
+        receives coordinates of interaction with 
+        a #stalagmyte, or an #immobile_touch_probe
+        
+        Inputs:
+            x, y, z
+                Center of immobile touch probe
+        """
+        if self.tip_attached:
+            self._setCalibrationWithTip(x=x, y=y, z=z)
+        else:
+            super().setStalagmyteCoord(x=x, y=y, z=z)
+            self._setCalibrationWithTip(x=x, y=y, z=z-self.tip_added_z_length)
+
+
+    def _setCalibrationWithTip(self, x, y, z):
+        """
+        Handles situation when the pipettor is calibrated with a tip attached
+        """
+        
+        self.immob_probe_x_with_tip = x
+        self.immob_probe_y_with_tip = y
+        self.immob_probe_z_with_tip = z
+
+
+    def _getCalibrationWithTip(self):
+        return self.immob_probe_x_with_tip, self.immob_probe_y_with_tip, self.immob_probe_z_with_tip
+
+
     def pickUpTip(self, rack, column, row, fine_approach_dz=10, raise_z=0, raise_dz_with_tip=100, fine_approach_speed=500):
         # Obtaining coordinate of the tip position
         x, y, z = rack.calcWorkingPosition(column, row, self)
@@ -1105,7 +1136,8 @@ class pipettor(mobile_tool):
         saved in the object after calibration
         """
         if self.tip_attached:
-            return self.immob_probe_x, self.immob_probe_y, self.immob_probe_z - self.tip_added_z_length
+            return self._getCalibrationWithTip()
+            #return self.immob_probe_x, self.immob_probe_y, self.immob_probe_z - self.tip_added_z_length
         else:
             return self.immob_probe_x, self.immob_probe_y, self.immob_probe_z
 
@@ -1331,10 +1363,10 @@ class touch_probe():
 #            }
 
     step_dict = {
-                0: {'step_fwd': 3, 'speed_xy_fwd': 1000, 'speed_z_fwd':2000,
+                0: {'step_fwd': 1, 'speed_xy_fwd': 250, 'speed_z_fwd':2000,
                     'step_back': 3, 'speed_xy_back': 1000, 'speed_z_back':2000},
-                1: {'step_fwd': 0.2, 'speed_xy_fwd': 200, 'speed_z_fwd':1000,
-                    'step_back': 1, 'speed_xy_back': 500, 'speed_z_back':1000},
+                1: {'step_fwd': 0.2, 'speed_xy_fwd': 100, 'speed_z_fwd':1000,
+                    'step_back': 1, 'speed_xy_back': 300, 'speed_z_back':1000},
                 2: {'step_fwd': 0.05, 'speed_xy_fwd': 25, 'speed_z_fwd':500,
                     'step_back': 0.2, 'speed_xy_back': 50, 'speed_z_back':500},
             }
@@ -1408,7 +1440,7 @@ class touch_probe():
         # Raise gantry
         self.robot.move_delta(dz=-raise_height)
         # Move through obstruction
-        self.robot.moveAxisDelta(axis=axis, value=direction*dist_through_obstruct)
+        self.robot.moveAxisDelta(axis=axis, value=direction*dist_through_obstruct+step_back_length)
         # Lower gantry back
         self.robot.moveAxisDelta(axis='z', value=raise_height)
         # Find opposite side of the wall

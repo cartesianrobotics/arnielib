@@ -488,12 +488,14 @@ class tool_test_case(unittest.TestCase):
         stp = tools.stationary_touch_probe(ar, 'COM3')
         x, y, z, opposite_x, orthogonal_y, raise_height = stp.rack.getSimpleCalibrationPoints()
 
-        
+        # This test depends on the actual length of the stationary probe.
+        # If length is physically changed, the test may fail. 
+        # In this case, it is safe to correct the number to represent changed dimensions.
         self.assertGreater(x, 70)
         self.assertLess(x, 100)
         self.assertGreater(y, 60)
         self.assertLess(y, 80)
-        self.assertGreater(z, 480)
+        self.assertGreater(z, 420)
         self.assertLess(z, 510)
         self.assertGreater(opposite_x, 16+1+1)
         self.assertLess(opposite_x, 30)
@@ -502,6 +504,27 @@ class tool_test_case(unittest.TestCase):
         self.assertGreater(raise_height, 1)
         self.assertLess(raise_height, 100)
     
+
+    def test_findCenterOuter(self):
+        cartesian.arnie = mock.MagicMock()
+        tools.llc.serial_device.readAll = mock.MagicMock()
+        tools.llc.serial_device.readAll.return_value = "stationary touch probe"
+        tools.llc.serial.Serial = mock.MagicMock()
+        
+        ar = cartesian.arnie('COM1', 'COM2')
+        stp = tools.stationary_touch_probe(ar)
+        
+        stp.findWall = mock.MagicMock()
+        stp.findWall.side_effect = [100, 200, 100, 200]
+        
+        center = stp.findCenterOuter(axis='x', raise_height=10, dist_through_obstruct=210)
+        self.assertEqual(center, 150)
+        center = stp.findCenterOuter(axis='y', raise_height=10, dist_through_obstruct=210)
+        self.assertEqual(center, 150)
+        
+        
+        
+
 
 # ======================================================================================
 # pipettor class
@@ -562,6 +585,57 @@ class tool_test_case(unittest.TestCase):
         ar.getToolAtCoord.assert_called_with(x, y, z_pickup, z_init=0, speed_xy=None, speed_z=None)
 
 
+
+    def test__pipettor__getStalagmyteCoord(self):
+        # Mocking pipettor
+        cartesian.arnie = mock.MagicMock()
+        tools.llc.serial_device.readAll = mock.MagicMock()
+        tools.llc.serial_device.readAll.return_value = "Servo"
+        tools.llc.serial.Serial = mock.MagicMock()
+        tools.pipettor.home = mock.MagicMock()
+        
+        # Initializing the robot
+        ar = cartesian.arnie('COM1', 'COM2')
+        ar.getToolAtCoord = mock.MagicMock()
+        serial_device = llc.serial_device('COM3')
+        p1000 = tools.pipettor.getTool(robot=ar, tool_name='p1000_tool')
+        
+        # Mimicking initial calibration
+        p1000.setStalagmyteCoord(51, 69, 420)
+        
+        # Checking that calibration was properly saved
+        x, y, z = p1000.getStalagmyteCoord()
+        self.assertEqual(x, 51)
+        self.assertEqual(y, 69)
+        self.assertEqual(z, 420)
+        
+        # Emulating pipette tip pickup
+        p1000.tip_attached = True
+        
+        # Checking the calibration recalculated due to the added tip
+        xt, yt, zt = p1000.getStalagmyteCoord()
+        self.assertEqual(xt, 51)
+        self.assertEqual(yt, 69)
+        self.assertEqual(zt, 420-p1000.tip_added_z_length)
+        
+        # Repeating calibration with a new tip added
+        p1000.setStalagmyteCoord(50, 70, 350)
+        
+        # Checking that the robot returns updated calibration points
+        xt2, yt2, zt2 = p1000.getStalagmyteCoord()
+        self.assertEqual(xt2, 50)
+        self.assertEqual(yt2, 70)
+        self.assertEqual(zt2, 350)
+        
+        # Emulating tip discard
+        p1000.tip_attached = False
+        
+        # Calibration points must be the same as before tip calibration
+        x2, y2, z2 = p1000.getStalagmyteCoord()
+        self.assertEqual(x2, 51)
+        self.assertEqual(y2, 69)
+        self.assertEqual(z2, 420)
+        
 
 # ======================================================================================
 # Mobile gripper tool

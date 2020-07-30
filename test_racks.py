@@ -4,6 +4,10 @@ import racks
 import os
 import json
 import configparser
+import samples
+import cartesian
+import tools
+import low_level_comm as llc
 
 class racks_test_case(unittest.TestCase):
     
@@ -228,6 +232,33 @@ class racks_test_case(unittest.TestCase):
         self.assertEqual(z_corr-z_nc, -100)
     
 
+    def test_calcWorkingPosition2(self):
+        r = racks.stackable(rack_name='RackThatCannotBeNamed', rack_type='test_rack')
+        # Rack receives calibration
+        r.updateCenter(200, 100, 400, 50, 70, 450)
+        
+        cartesian.arnie = mock.MagicMock()
+        tools.llc.serial_device.readAll = mock.MagicMock()
+        tools.llc.serial_device.readAll.return_value = "Servo"
+        tools.llc.serial.Serial = mock.MagicMock()
+        tools.pipettor.home = mock.MagicMock()
+        
+        
+        ar = cartesian.arnie('COM1', 'COM2')
+        ar.getToolAtCoord = mock.MagicMock()
+        serial_device = llc.serial_device('COM3')
+        p1000 = tools.pipettor.getTool(robot=ar, tool_name='p1000_tool')
+        
+        # Tool receives calibration
+        p1000.setStalagmyteCoord(51, 69, 420)
+        
+        x, y, z = r.calcWorkingPosition(well_col=0, well_row=0, tool=p1000)
+        self.assertEqual(x, 201-51.75)
+        self.assertEqual(y, 99-33.75)
+        self.assertEqual(z, 370)
+
+
+
     def test_calcWorkingPosition_NoToolProvided(self):
         p1000 = racks.rack(rack_name="p1000_1", rack_data={'n_x':0, 'n_y':2, 'type': 'p1000_tips'})
         p1000.updateCenter(x=100, y=200, z=600, x_btm_touch=90, y_btm_touch=66, z_btm_touch=500)
@@ -343,6 +374,60 @@ class racks_test_case(unittest.TestCase):
         self.assertEqual(y, 195)
         self.assertEqual(z, 520)
         
+
+    def test_getSampleCenter_WithCalibration(self):
+        r = racks.rack(rack_name='RackThatCannotBeNamed', rack_type='test_rack')
+        
+        r.rack_data['position'] = [400, 200, 500]
+        r.rack_data['pos_stalagmyte'] = [200, 100, 400]
+        
+        class tool():
+            def getStalagmyteCoord(self):
+                return [210, 95, 420]
+        mock_tool = tool()
+        
+        s = samples.sample(sample_name='SampleThatCannotBeNamed', sample_type='test_sample')
+        s.place(r, 0, 0)
+        
+        x, y = s.getSampleCenterXY(mock_tool)
+        
+        self.assertEqual(x, 410-51.75)
+        self.assertEqual(y, 195-33.75)
+        
+
+    def test__getSampleCenter__WithCalibration2(self):
+        r = racks.stackable(rack_name='RackThatCannotBeNamed', rack_type='test_rack')
+        s = samples.sample(sample_name='SampleThatCannotBeNamed', sample_type='test_sample')
+        
+        # Rack receives calibration
+        r.updateCenter(200, 100, 400, 50, 70, 450)
+        # Placing sample into the rack
+        s.place(r, 0, 0)
+        
+        cartesian.arnie = mock.MagicMock()
+        tools.llc.serial_device.readAll = mock.MagicMock()
+        tools.llc.serial_device.readAll.return_value = "Servo"
+        tools.llc.serial.Serial = mock.MagicMock()
+        tools.pipettor.home = mock.MagicMock()
+        
+        
+        ar = cartesian.arnie('COM1', 'COM2')
+        ar.getToolAtCoord = mock.MagicMock()
+        serial_device = llc.serial_device('COM3')
+        p1000 = tools.pipettor.getTool(robot=ar, tool_name='p1000_tool')
+        
+        # Tool receives calibration
+        p1000.setStalagmyteCoord(51, 69, 420)
+        
+        x, y = s.getSampleCenterXY(p1000)
+        self.assertEqual(x, 201-51.75)
+        self.assertEqual(y, 99-33.75)
+        
+        
+        
+        
+        
+
 
 
     # Rack gripping functions
